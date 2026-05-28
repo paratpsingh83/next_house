@@ -1,0 +1,84 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# k8s/overlays/dev/kustomization.yaml
+# Dev overlay — reduced replicas, lower limits, dev image tag
+#
+# Apply with: kubectl apply -k k8s/overlays/dev
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nexthouse-dev
+
+bases:
+  - ../../base
+
+images:
+  - name: nexthouse-backend
+    newName: nexthouse-backend
+    newTag: "dev"
+
+patches:
+  # Dev: 1 replica is enough
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nexthouse-api
+      spec:
+        replicas: 1
+    target:
+      kind: Deployment
+      name: nexthouse-api
+
+  # Dev: lighter resource limits
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nexthouse-api
+      spec:
+        template:
+          spec:
+            containers:
+              - name: nexthouse-api
+                resources:
+                  requests:
+                    cpu: "250m"
+                    memory: "512Mi"
+                  limits:
+                    cpu: "1000m"
+                    memory: "1Gi"
+    target:
+      kind: Deployment
+      name: nexthouse-api
+
+  # Dev: disable topology spread (single-node clusters)
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nexthouse-api
+      spec:
+        template:
+          spec:
+            topologySpreadConstraints: []
+    target:
+      kind: Deployment
+      name: nexthouse-api
+
+  # Dev: HPA min=1 max=3
+  - patch: |-
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: nexthouse-api-hpa
+      spec:
+        minReplicas: 1
+        maxReplicas: 3
+    target:
+      kind: HorizontalPodAutoscaler
+      name: nexthouse-api-hpa
+
+commonLabels:
+  environment: dev
+  managed-by: kustomize

@@ -1,0 +1,137 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# nexthouse-api-service.yaml
+# Exposes the NexHouse API within the cluster and via Ingress
+# ══════════════════════════════════════════════════════════════════════════════
+
+---
+# ── ClusterIP Service — internal cluster routing ──────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexthouse-api-service
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: api
+  annotations:
+    # Prometheus scraping via service discovery
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/actuator/prometheus"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+
+---
+# ── Ingress — routes external traffic to the API ──────────────────────────────
+# Uses NGINX Ingress Controller (install with: helm install ingress-nginx ingress-nginx/ingress-nginx)
+# TLS certificate managed by cert-manager (Let's Encrypt)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexthouse-api-ingress
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: ingress
+  annotations:
+    # NGINX configuration
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size:         "55m"    # match multipart limit
+    nginx.ingress.kubernetes.io/proxy-read-timeout:      "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout:      "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout:   "10"
+
+    # WebSocket support (required for STOMP /ws endpoint)
+    nginx.ingress.kubernetes.io/proxy-http-version:    "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+
+    # Security headers
+    nginx.ingress.kubernetes.io/force-ssl-redirect:     "true"
+    nginx.ingress.kubernetes.io/ssl-redirect:           "true"
+
+    # Rate limiting at ingress level (supplement to app-level limiting)
+    nginx.ingress.kubernetes.io/limit-rps: "200"
+
+    # TLS certificate via cert-manager (Let's Encrypt)
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.nexthouse.app
+      secretName: nexthouse-api-tls
+
+  rules:
+    - host: api.nexthouse.app
+      http:
+        paths:
+          # API endpoints
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: nexthouse-api-service
+                port:
+                  number: 80
+
+          # WebSocket endpoint
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: nexthouse-api-service
+                port:
+                  number: 80
+
+          # Actuator (restrict to internal — or add IP whitelist annotation)
+          - path: /actuator/health
+            pathType: Prefix
+            backend:
+              service:
+                name: nexthouse-api-service
+                port:
+                  number: 80
+
+          # Swagger UI (disable in production or add auth)
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: nexthouse-api-service
+                port:
+                  number: 80
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: nexthouse-api-service
+                port:
+                  number: 80
+
+---
+# ── ServiceAccount for the API pod ───────────────────────────────────────────
+# Principle of least privilege: the pod gets its own identity with no cluster permissions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexthouse-api-sa
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: api
+  # Annotate with AWS IAM role for IRSA (IAM Roles for Service Accounts)
+  # This allows the pod to access S3/SES without hardcoded credentials
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/nexthouse-api-role
+automountServiceAccountToken: false

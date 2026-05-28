@@ -1,0 +1,37 @@
+# ===== Maven =====
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+.mvn/wrapper/maven-wrapper.jar
+
+# ===== Logs =====
+logs/
+*.log
+
+# ===== IDEs =====
+.idea/
+*.iws
+*.iml
+*.ipr
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+
+# ===== Environment =====
+.env
+*.env
+
+# ===== Build =====
+build/
+out/
+
+# ===== Docker temp =====
+*.pid

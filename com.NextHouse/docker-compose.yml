@@ -1,0 +1,117 @@
+version: '3.8'
+
+# ══════════════════════════════════════════════════════════════════════════
+# NexHouse — Local Development Stack
+# Starts: PostgreSQL+PostGIS, Redis, Kafka, Zookeeper, Kafka UI
+#
+# Usage:
+#   Start:   docker compose up -d
+#   Stop:    docker compose down
+#   Logs:    docker compose logs -f
+#   Reset:   docker compose down -v   (deletes all data)
+# ══════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL 16 with PostGIS ─────────────────────────────────────────
+  # Uses postgis/postgis image which has PostGIS pre-installed.
+  # Your project uses geography(Point,4326) columns — requires PostGIS.
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: nexthouse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nexthouse_db
+      POSTGRES_USER: nexthouse
+      POSTGRES_PASSWORD: changeme
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexthouse -d nexthouse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────
+  # Used for: presence cache, 2FA tokens, rate limiting, session store.
+  redis:
+    image: redis:7.2-alpine
+    container_name: nexthouse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Zookeeper (required by Kafka) ──────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: nexthouse-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+
+  # ── Kafka ──────────────────────────────────────────────────────────────
+  # Used for: post events, notification fanout, recommendation updates,
+  #           location updates, safety alert broadcasts.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: nexthouse-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Kafka UI (optional but very useful) ───────────────────────────────
+  # Open http://localhost:8090 to view topics, messages, consumers.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: nexthouse-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: nexthouse-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+volumes:
+  postgres_data:
+  redis_data:
+  zookeeper_data:
+  zookeeper_log:
+  kafka_data:

@@ -1,0 +1,215 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# nexthouse-network-rbac.yaml
+# Network Policies + RBAC for production security hardening
+# ══════════════════════════════════════════════════════════════════════════════
+
+---
+# ── NetworkPolicy: API pod ingress/egress ─────────────────────────────────────
+# Principle of least privilege networking:
+#   - API pods accept traffic ONLY from the Ingress controller
+#   - API pods can reach ONLY postgres, redis, kafka within the namespace
+#   - All other traffic is denied by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexthouse-api-netpol
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: api
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow traffic from NGINX Ingress Controller namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Allow Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+
+    # Allow outbound HTTPS (AWS S3, Firebase, Twilio, SendGrid)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8      # Block internal network (must go through pods)
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# ── NetworkPolicy: PostgreSQL isolation ───────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexthouse-postgres-netpol
+  namespace: nexthouse
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    # Only API pods can connect to Postgres
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# ── NetworkPolicy: Redis isolation ────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nexthouse-redis-netpol
+  namespace: nexthouse
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# ── RBAC: Role for the API ServiceAccount ────────────────────────────────────
+# The API pod has NO permissions to the Kubernetes API server by default.
+# Only grant what's needed (currently nothing — the app doesn't use K8s API).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nexthouse-api-role
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+rules: []   # No K8s API permissions needed
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nexthouse-api-rolebinding
+  namespace: nexthouse
+subjects:
+  - kind: ServiceAccount
+    name: nexthouse-api-sa
+    namespace: nexthouse
+roleRef:
+  kind: Role
+  name: nexthouse-api-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ── ResourceQuota: Prevent resource exhaustion in the namespace ───────────────
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: nexthouse-resource-quota
+  namespace: nexthouse
+spec:
+  hard:
+    # Pod limits
+    pods: "50"
+    # CPU: total requested CPU across all pods in namespace
+    requests.cpu: "20"
+    limits.cpu: "60"
+    # Memory
+    requests.memory: "20Gi"
+    limits.memory: "60Gi"
+    # Storage
+    persistentvolumeclaims: "10"
+    requests.storage: "500Gi"
+    # Services
+    services: "20"
+    services.loadbalancers: "2"
+
+---
+# ── LimitRange: Default resource limits for pods that don't specify ───────────
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: nexthouse-limit-range
+  namespace: nexthouse
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu:    "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu:    "250m"
+        memory: "256Mi"
+      max:
+        cpu:    "4000m"
+        memory: "8Gi"
+      min:
+        cpu:    "50m"
+        memory: "64Mi"

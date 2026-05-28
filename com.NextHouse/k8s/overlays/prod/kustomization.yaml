@@ -1,0 +1,62 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# k8s/overlays/prod/kustomization.yaml
+# Kustomize overlay — production overrides over the base manifests
+#
+# Apply with: kubectl apply -k k8s/overlays/prod
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nexthouse
+
+bases:
+  - ../../base
+
+# Production image — pin to a specific digest for immutable deployments
+images:
+  - name: nexthouse-backend
+    newName: 123456789.dkr.ecr.ap-southeast-1.amazonaws.com/nexthouse-backend
+    newTag: "1.0.0"    # Update with each release: 1.0.1, 1.1.0, etc.
+
+# Production-specific patches
+patches:
+  # Scale up replicas for production load
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nexthouse-api
+        namespace: nexthouse
+      spec:
+        replicas: 4
+    target:
+      kind: Deployment
+      name: nexthouse-api
+
+  # Increase resource limits for production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nexthouse-api
+        namespace: nexthouse
+      spec:
+        template:
+          spec:
+            containers:
+              - name: nexthouse-api
+                resources:
+                  requests:
+                    cpu: "1000m"
+                    memory: "1Gi"
+                  limits:
+                    cpu: "4000m"
+                    memory: "2Gi"
+    target:
+      kind: Deployment
+      name: nexthouse-api
+
+# Production labels
+commonLabels:
+  environment: production
+  managed-by: kustomize

@@ -1,0 +1,23 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# k8s/base/kustomization.yaml
+# Kustomize base — lists all manifests that make up the full stack
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nexthouse
+
+resources:
+  - 01-namespace-configmap.yaml
+  - 02-secrets-template.yaml
+  - 03-api-deployment.yaml
+  - 04-api-service-ingress.yaml
+  - 05-hpa-pdb.yaml
+  - 06-postgres-statefulset.yaml
+  - 07-redis-statefulset.yaml
+  - 08-network-rbac.yaml
+  - 09-kafka-statefulset.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: nexthouse
+  managed-by: kustomize

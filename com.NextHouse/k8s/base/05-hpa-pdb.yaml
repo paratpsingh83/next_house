@@ -1,0 +1,118 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# nexthouse-hpa.yaml
+# Horizontal Pod Autoscaler — scales API pods based on CPU, memory, and RPS
+#
+# Scaling behaviour:
+#   Scale UP:   when avg CPU > 70% OR avg memory > 80% for 60s → add pods fast
+#   Scale DOWN: when load drops, wait 300s → remove pods slowly (avoid flapping)
+#
+# Prerequisites:
+#   - metrics-server installed (CPU/memory): kubectl apply -f metrics-server.yaml
+#   - KEDA installed (RPS/custom metrics): helm install keda kedacore/keda
+# ══════════════════════════════════════════════════════════════════════════════
+
+---
+# ── Standard HPA (CPU + Memory) ──────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexthouse-api-hpa
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nexthouse-api
+
+  # ── Replica bounds ──────────────────────────────────────────────────────────
+  minReplicas: 2      # Always at least 2 for HA (one can fail without downtime)
+  maxReplicas: 20     # Hard ceiling — prevents runaway scaling
+
+  # ── Scaling metrics ─────────────────────────────────────────────────────────
+  metrics:
+    # CPU: scale up when average utilisation > 70%
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Memory: scale up when average utilisation > 80%
+    # Note: memory is not a reliable scale-down metric (JVM heap rarely releases)
+    # Use for scale-up signal only; scale-down relies on CPU returning to normal
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  # ── Scaling behaviour (prevents thrashing) ──────────────────────────────────
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60       # Wait 60s of sustained pressure before scaling up
+      policies:
+        - type: Pods
+          value: 4                          # Add up to 4 pods per scaling event
+          periodSeconds: 60
+        - type: Percent
+          value: 100                        # Or double the pod count — whichever is less
+          periodSeconds: 60
+      selectPolicy: Min                     # Use the more conservative policy
+
+    scaleDown:
+      stabilizationWindowSeconds: 300      # Wait 5 min before scaling down (prevents flapping)
+      policies:
+        - type: Pods
+          value: 2                          # Remove at most 2 pods per event
+          periodSeconds: 120
+      selectPolicy: Max                     # Use the most conservative policy
+
+---
+# ── Pod Disruption Budget ─────────────────────────────────────────────────────
+# Guarantees at least 1 pod stays up during voluntary disruptions
+# (node maintenance, rolling updates, cluster upgrades)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nexthouse-api-pdb
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: pdb
+spec:
+  # At most 1 pod can be unavailable at a time
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexthouse
+      app.kubernetes.io/component: api
+
+---
+# ══════════════════════════════════════════════════════════════════════════════
+# KEDA ScaledObject — HTTP request-based autoscaling (optional, advanced)
+# Requires KEDA + keda-add-ons-http-scaler installed
+# Scales to 0 replicas when no traffic (cost optimisation for non-prod envs)
+# ══════════════════════════════════════════════════════════════════════════════
+# Uncomment to enable KEDA HTTP scaling:
+#
+# apiVersion: http.keda.sh/v1alpha1
+# kind: HTTPScaledObject
+# metadata:
+#   name: nexthouse-api-keda
+#   namespace: nexthouse
+# spec:
+#   host: api.nexthouse.app
+#   targetPendingRequests: 100         # Scale up when > 100 pending requests per pod
+#   scaledownPeriod: 300
+#   replicas:
+#     min: 0                           # Scale to 0 when no traffic
+#     max: 20
+#   scaleTargetRef:
+#     name: nexthouse-api
+#     apiVersion: apps/v1
+#     kind: Deployment

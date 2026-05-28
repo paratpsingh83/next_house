@@ -1,0 +1,51 @@
+# ── Build artifacts ───────────────────────────────────────────────────────────
+target/
+*.jar
+*.war
+
+# ── IDE files ─────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# ── Kubernetes / Helm charts (not needed in image) ────────────────────────────
+k8s/
+helm/
+.helm/
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── CI / CD ───────────────────────────────────────────────────────────────────
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+.circleci/
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# ── Docs ─────────────────────────────────────────────────────────────────────
+docs/
+*.md
+README*
+CHANGELOG*
+LICENSE*
+
+# ── Test coverage ─────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Secrets (NEVER copy into image) ──────────────────────────────────────────
+*.env
+.env*
+secrets/
+**/*secret*
+**/*credential*
+firebase-service-account.json
