@@ -1,49 +1,27 @@
-'use client';
-// src/app/layout.tsx
-import React from 'react';
-import { Provider } from 'react-redux';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
-import { store } from '@/store';
-import AuthProvider from '@/components/auth/AuthProvider';
-import WSProvider from '@/components/common/WSProvider';
+// src/app/layout.tsx — server component (NO 'use client')
+import type { Metadata } from 'next';
+import Providers from '@/components/common/Providers';
 import './globals.css';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false },
-  },
-});
+export const metadata: Metadata = {
+  title: 'NexHouse — Hyperlocal Community',
+  description: 'Connect with your neighbourhood on NexHouse',
+  themeColor: '#10b981',
+  viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" content="#10b981" />
-        <title>NexHouse — Hyperlocal Community</title>
-        <meta name="description" content="Connect with your neighbourhood on NexHouse" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body>
-        <Provider store={store}>
-          <QueryClientProvider client={queryClient}>
-            <AuthProvider>
-              <WSProvider>
-                {children}
-                <Toaster
-                  position="top-center"
-                  toastOptions={{
-                    duration: 4000,
-                    style: { borderRadius: '12px', fontSize: '14px' },
-                    success: { style: { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' } },
-                    error:   { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5' } },
-                  }}
-                />
-              </WSProvider>
-            </AuthProvider>
-          </QueryClientProvider>
-        </Provider>
+      <body className="font-sans">
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
