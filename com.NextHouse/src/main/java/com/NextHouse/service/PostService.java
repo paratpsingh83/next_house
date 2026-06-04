@@ -25,7 +25,7 @@ public interface PostService {
 
     PageResponseDTO<PostResponseDTO> getUserPosts(Long userId, Long currentUserId, int page, int size);
 
-    PageResponseDTO<PostResponseDTO> getHashtagFeed(String hashtag, int page, int size);
+    PageResponseDTO<PostResponseDTO> getHashtagFeed(String hashtag, Long currentUserId, int page, int size);
 
     // Engagement
     void reactToPost(Long postId, Long currentUserId, ReactPostRequestDTO dto);

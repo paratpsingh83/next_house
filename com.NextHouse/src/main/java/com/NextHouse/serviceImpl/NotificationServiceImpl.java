@@ -182,11 +182,11 @@ public class NotificationServiceImpl implements NotificationService {
     public void notifyFollow(User follower, User followed) {
         sendNotification(
             followed.getId(), follower.getId(),
-            "FOLLOW",
+            "NEW_FOLLOWER",
             follower.getName() + " started following you",
             "@" + follower.getUsername() + " is now following you",
             "USER", follower.getId(),
-            "/users/" + follower.getId()
+            "/profile/" + follower.getId()
         );
     }
 

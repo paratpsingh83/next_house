@@ -77,6 +77,18 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
             Pageable pageable
     );
 
+    /** Text search by title or description. */
+    @Query("""
+            SELECT a FROM Activity a
+            WHERE a.isDeleted = false
+              AND a.status = com.NextHouse.constant.ActivityStatus.PUBLISHED
+              AND a.activityTime > :now
+              AND (LOWER(a.title) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(a.description) LIKE LOWER(CONCAT('%', :query, '%')))
+            ORDER BY a.activityTime ASC
+            """)
+    Page<Activity> searchByQuery(@Param("query") String query, @Param("now") LocalDateTime now, Pageable pageable);
+
     /** Scheduler: expire activities whose end time has passed. */
     @Modifying
     @Query("""

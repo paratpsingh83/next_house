@@ -83,6 +83,7 @@ export const postsApi = {
   unsave:         (postId: number)                                                  => apiDelete<void>(`/posts/${postId}/save`),
   savedPosts:     (collection?: string, page = 0, size = 20)                       => apiGet<PageResponse<PostResponse>>('/posts/saved', { collection, page, size }),
   share:          (postId: number)                                                  => apiPost<void>(`/posts/${postId}/share`),
+  report:         (postId: number, reason: string, description?: string)            => apiPost<void>(`/posts/${postId}/report`, { reason, description }),
 
   // Comments
   getComments:    (postId: number, page = 0, size = 20)                            => apiGet<PageResponse<PostCommentResponse>>(`/posts/${postId}/comments`, { page, size }),

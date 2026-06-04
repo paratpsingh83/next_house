@@ -9,6 +9,7 @@ import com.NextHouse.event.KafkaEventPublisher;
 import com.NextHouse.exception.*;
 import com.NextHouse.mapper.UserMapper;
 import com.NextHouse.repository.*;
+import com.NextHouse.service.NotificationService;
 import com.NextHouse.service.UserService;
 import com.NextHouse.util.geo.GeoUtils;
 import lombok.RequiredArgsConstructor;
@@ -37,9 +38,10 @@ public class UserServiceImpl implements UserService {
     private final UserPresenceRepository     userPresenceRepository;
     private final NeighborhoodRepository     neighborhoodRepository;
 
-    private final UserMapper          userMapper;
-    private final GeoUtils            geoUtils;
-    private final KafkaEventPublisher eventPublisher;
+    private final UserMapper            userMapper;
+    private final GeoUtils              geoUtils;
+    private final KafkaEventPublisher   eventPublisher;
+    private final NotificationService   notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -153,9 +155,12 @@ public class UserServiceImpl implements UserService {
         if (blockedUserRepository.existsByUserIdAndBlockedUserId(targetUserId, currentUserId))
             throw new ForbiddenException("Cannot follow this user");
 
-        followRepository.save(Follow.builder()
-                .follower(findUserOrThrow(currentUserId))
-                .following(findUserOrThrow(targetUserId)).build());
+        User follower = findUserOrThrow(currentUserId);
+        User followed = findUserOrThrow(targetUserId);
+
+        followRepository.save(Follow.builder().follower(follower).following(followed).build());
+
+        notificationService.notifyFollow(follower, followed);
 
         eventPublisher.publishUserFollowed(DomainEvents.UserFollowedEvent.builder()
                 .eventId(KafkaEventPublisher.newEventId()).occurredAt(LocalDateTime.now())

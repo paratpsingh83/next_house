@@ -9,6 +9,14 @@ const WS_URL = `${process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:8080'}/ws`
 let client: Client | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
+// Callbacks waiting for the next successful connection (drained on each connect)
+const connectQueue: Set<() => void> = new Set();
+
+function drainConnectQueue() {
+  connectQueue.forEach(cb => cb());
+  connectQueue.clear();
+}
+
 export const wsClient = {
 
   connect(onConnected?: () => void, onDisconnected?: () => void): void {
@@ -24,12 +32,13 @@ export const wsClient = {
       reconnectDelay: 5000,
       onConnect: () => {
         console.info('[WS] Connected');
-        // Send presence heartbeat every 60s
         heartbeatInterval = setInterval(() => {
           if (client?.connected) {
             client.publish({ destination: '/app/presence/heartbeat', body: '{}' });
           }
         }, 60000);
+        // Re-establish any subscriptions that were registered before connection was ready
+        drainConnectQueue();
         onConnected?.();
       },
       onDisconnect: () => {
@@ -47,11 +56,20 @@ export const wsClient = {
 
   disconnect(): void {
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+    connectQueue.clear();
     client?.deactivate();
     client = null;
   },
 
   isConnected: (): boolean => client?.connected ?? false,
+
+  // Runs cb immediately if connected, otherwise defers until next connect event.
+  // Returns a cancel function (call on component unmount to prevent stale subscriptions).
+  onceConnected(cb: () => void): () => void {
+    if (client?.connected) { cb(); return () => {}; }
+    connectQueue.add(cb);
+    return () => connectQueue.delete(cb);
+  },
 
   // Subscribe to room messages → /topic/rooms/{roomId}/messages
   onRoomMessage(roomId: number, handler: (msg: ChatMessageResponse) => void): () => void {

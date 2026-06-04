@@ -28,8 +28,6 @@ public class ActivityController {
 
     private final ActivityService activityService;
 
-    // ─── CRUD ─────────────────────────────────────────────────────────────────
-
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     @Operation(

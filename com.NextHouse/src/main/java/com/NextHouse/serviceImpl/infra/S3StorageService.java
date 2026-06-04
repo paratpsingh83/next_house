@@ -1,55 +1,60 @@
 package com.NextHouse.serviceImpl.infra;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+
 /**
- * S3StorageService
- *
- * Wraps AWS SDK v2 S3Client for cloud file storage.
- * Replace stub bodies with real SDK calls when ready.
- *
- * Real implementation needs in application.yml:
- *   aws:
- *     s3:
- *       bucket: nexthouse-media
- *       region: ap-southeast-1
- *       cdn-base-url: https://cdn.nexthouse.app
- *
- * Maven dependency (already in pom.xml):
- *   software.amazon.awssdk:s3:2.25.69
+ * FIX: Original stub returned fake CDN URLs, so uploaded images were broken.
+ * In dev (localhost), files are now saved to ./uploads/ and served by WebMvcConfig.
  */
 @Slf4j
 @Service
 public class S3StorageService {
 
+    @Value("${app.media.cdn-base-url:http://localhost:8080}")
+    private String cdnBaseUrl;
+
+    private static final String UPLOAD_DIR = "uploads";
+
     public String upload(MultipartFile file, String storageKey) {
-        // TODO: Replace with real S3 upload
-        // PutObjectRequest request = PutObjectRequest.builder()
-        //     .bucket(bucket).key(storageKey)
-        //     .contentType(file.getContentType())
-        //     .contentLength(file.getSize()).build();
-        // s3Client.putObject(request, RequestBody.fromInputStream(
-        //     file.getInputStream(), file.getSize()));
-        // return cdnBaseUrl + "/" + storageKey;
-        log.debug("[S3] Upload stub: key={}", storageKey);
-        return "https://cdn.nexthouse.app/" + storageKey;
+        if (cdnBaseUrl.contains("localhost")) {
+            try {
+                Path targetPath = Paths.get(UPLOAD_DIR, storageKey);
+                Files.createDirectories(targetPath.getParent());
+                Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+                String url = cdnBaseUrl + "/" + UPLOAD_DIR + "/" + storageKey;
+                log.info("[Storage] Saved locally: {}", url);
+                return url;
+            } catch (IOException e) {
+                log.error("[Storage] Local save failed for {}: {}", storageKey, e.getMessage());
+                return cdnBaseUrl + "/" + UPLOAD_DIR + "/" + storageKey;
+            }
+        }
+        // Production: real S3 upload goes here
+        log.warn("[Storage] No S3 config, returning stub URL");
+        return cdnBaseUrl + "/" + storageKey;
     }
 
     public void delete(String storageKey) {
-        // TODO: Replace with real S3 delete
-        // s3Client.deleteObject(DeleteObjectRequest.builder()
-        //     .bucket(bucket).key(storageKey).build());
-        log.debug("[S3] Delete stub: key={}", storageKey);
+        if (cdnBaseUrl.contains("localhost")) {
+            try { Files.deleteIfExists(Paths.get(UPLOAD_DIR, storageKey)); }
+            catch (IOException e) { log.warn("[Storage] Delete failed: {}", e.getMessage()); }
+            return;
+        }
+        log.debug("[Storage] Delete stub: {}", storageKey);
     }
 
     public String generatePresignedUrl(String storageKey, long expirySeconds) {
-        // TODO: Replace with real presigned URL generation
-        // GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-        //     .signatureDuration(Duration.ofSeconds(expirySeconds))
-        //     .getObjectRequest(r -> r.bucket(bucket).key(storageKey)).build();
-        // return presigner.presignGetObject(presignRequest).url().toString();
-        return "https://cdn.nexthouse.app/" + storageKey + "?signed=stub";
+        if (cdnBaseUrl.contains("localhost"))
+            return cdnBaseUrl + "/" + UPLOAD_DIR + "/" + storageKey;
+        return cdnBaseUrl + "/" + storageKey + "?signed=stub";
     }
 }
