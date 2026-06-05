@@ -31,50 +31,51 @@ import java.util.List;
 
 /**
  * SecurityConfig
- *
+ * <p>
  * Spring Security 6 (Lambda DSL) configuration.
- *
+ * <p>
  * Key design decisions:
- *
+ * <p>
  * 1. STATELESS sessions:
- *    SessionCreationPolicy.STATELESS — no HttpSession created or used.
- *    All state lives in the JWT. This enables horizontal scaling
- *    (any server can handle any request).
- *
+ * SessionCreationPolicy.STATELESS — no HttpSession created or used.
+ * All state lives in the JWT. This enables horizontal scaling
+ * (any server can handle any request).
+ * <p>
  * 2. CSRF disabled:
- *    REST APIs consumed by mobile/SPA clients don't use browser cookie sessions,
- *    so CSRF tokens are irrelevant. If you add cookie-based auth, re-enable CSRF
- *    with CookieCsrfTokenRepository.withHttpOnlyFalse().
- *
+ * REST APIs consumed by mobile/SPA clients don't use browser cookie sessions,
+ * so CSRF tokens are irrelevant. If you add cookie-based auth, re-enable CSRF
+ * with CookieCsrfTokenRepository.withHttpOnlyFalse().
+ * <p>
  * 3. Filter order:
- *    RateLimitingFilter → JwtAuthenticationFilter → UsernamePasswordAuthenticationFilter
- *    Rate limiting runs first to reject abusive clients before any token processing.
- *
+ * RateLimitingFilter → JwtAuthenticationFilter → UsernamePasswordAuthenticationFilter
+ * Rate limiting runs first to reject abusive clients before any token processing.
+ * <p>
  * 4. Method security (@EnableMethodSecurity):
- *    Enables @PreAuthorize, @PostAuthorize, @Secured on controller/service methods.
- *    Examples used throughout the project:
- *      @PreAuthorize("hasRole('ADMIN')")
- *      @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
- *      @PreAuthorize("#userId == authentication.name or hasRole('ADMIN')")
+ * Enables @PreAuthorize, @PostAuthorize, @Secured on controller/service methods.
+ * Examples used throughout the project:
  *
+ * @PreAuthorize("hasRole('ADMIN')")
+ * @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+ * @PreAuthorize("#userId == authentication.name or hasRole('ADMIN')")
+ * <p>
  * 5. Security headers:
- *    Production-grade HTTP headers added via headers() DSL:
- *      - X-Content-Type-Options: nosniff
- *      - X-Frame-Options: DENY
- *      - Strict-Transport-Security (HSTS)
- *      - Content-Security-Policy
- *      - Referrer-Policy
- *
+ * Production-grade HTTP headers added via headers() DSL:
+ * - X-Content-Type-Options: nosniff
+ * - X-Frame-Options: DENY
+ * - Strict-Transport-Security (HSTS)
+ * - Content-Security-Policy
+ * - Referrer-Policy
+ * <p>
  * application.yml CORS config:
  * ─────────────────────────────────────────────────────────────────
  * app:
- *   cors:
- *     allowed-origins:
- *       - https://nexthouse.app
- *       - https://www.nexthouse.app
- *       - http://localhost:3000   # dev
- *     allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
- *     max-age: 3600
+ * cors:
+ * allowed-origins:
+ * - https://nexthouse.app
+ * - https://www.nexthouse.app
+ * - http://localhost:3000   # dev
+ * allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+ * max-age: 3600
  * ─────────────────────────────────────────────────────────────────
  */
 @Configuration
@@ -83,94 +84,96 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final UserDetailsServiceImpl      userDetailsService;
-    private final JwtAuthenticationFilter     jwtAuthenticationFilter;
-    private final RateLimitingFilter          rateLimitingFilter;
+    private final UserDetailsServiceImpl userDetailsService;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitingFilter rateLimitingFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
-    private final JwtAccessDeniedHandler      accessDeniedHandler;
+    private final JwtAccessDeniedHandler accessDeniedHandler;
 
     // ─── Security filter chain ────────────────────────────────────────────────
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // ── Session ──────────────────────────────────────────────────────
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // ── Session ──────────────────────────────────────────────────────
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-            // ── CSRF ─────────────────────────────────────────────────────────
-            .csrf(AbstractHttpConfigurer::disable)
+                // ── CSRF ─────────────────────────────────────────────────────────
+                .csrf(AbstractHttpConfigurer::disable)
 
-            // ── CORS ─────────────────────────────────────────────────────────
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // ── CORS ─────────────────────────────────────────────────────────
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-            // ── HTTP security headers ─────────────────────────────────────────
-            .headers(headers -> headers
-                .contentTypeOptions(contentType -> {}) // X-Content-Type-Options: nosniff
-                .frameOptions(frame -> frame.deny())   // X-Frame-Options: DENY
-                .httpStrictTransportSecurity(hsts -> hsts
-                    .includeSubDomains(true)
-                    .maxAgeInSeconds(31_536_000))       // 1 year HSTS
-                .contentSecurityPolicy(csp -> csp
-                    .policyDirectives(
-                        "default-src 'self'; " +
-                        "img-src 'self' data: https://cdn.nexthouse.app; " +
-                        "script-src 'self'; " +
-                        "style-src 'self' 'unsafe-inline'; " +
-                        "connect-src 'self' wss://nexthouse.app"))
-                .referrerPolicy(referrer -> referrer
-                    .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-            )
+                // ── HTTP security headers ─────────────────────────────────────────
+                .headers(headers -> headers
+                        .contentTypeOptions(contentType -> {
+                        }) // X-Content-Type-Options: nosniff
+                        .frameOptions(frame -> frame.deny())   // X-Frame-Options: DENY
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31_536_000))       // 1 year HSTS
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives(
+                                        "default-src 'self'; " +
+                                                "img-src 'self' data: https://cdn.nexthouse.app; " +
+                                                "script-src 'self'; " +
+                                                "style-src 'self' 'unsafe-inline'; " +
+                                                "connect-src 'self' wss://nexthouse.app"))
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                )
 
-            // ── Authorization rules ───────────────────────────────────────────
-            .authorizeHttpRequests(auth -> auth
+                // ── Authorization rules ───────────────────────────────────────────
+                .authorizeHttpRequests(auth -> auth
 
-                // ── Fully public ─────────────────────────────────────────────
-                .requestMatchers(
-                    "/api/v1/auth/**",
-                    "/actuator/health",
-                    "/actuator/info",
-                    "/swagger-ui/**",
-                    "/swagger-ui.html",
-                    "/v3/api-docs/**",
-                    "/ws/**"                     // WebSocket handshake
-                ).permitAll()
+                        // ── Fully public ─────────────────────────────────────────────
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/actuator/health",
+                                "/actuator/info",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/ws/**"                     // WebSocket handshake
+                        ).permitAll()
 
-                // ── Public GET endpoints ──────────────────────────────────────
-                .requestMatchers(HttpMethod.GET,
-                    "/api/v1/posts/**",
-                    "/api/v1/activities/**",
-                    "/api/v1/communities/**",
-                    "/api/v1/neighborhoods/**",
-                    "/api/v1/marketplace/**",
-                    "/api/v1/safety-alerts/**",
-                    "/api/v1/users/{userId}"
-                ).permitAll()
+                        // ── Public GET endpoints ──────────────────────────────────────
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/posts/**",
+                                "/api/v1/activities/**",
+                                "/api/v1/communities/**",
+                                "/api/v1/neighborhoods/**",
+                                "/api/v1/marketplace/**",
+                                "/api/v1/safety-alerts/**",
+                                "/api/v1/users/{userId}"
+                        ).permitAll()
 
-                // ── Admin-only endpoints ──────────────────────────────────────
-                .requestMatchers("/api/v1/admin/**")
-                    .hasRole("ADMIN")
+                        // ── Admin-only endpoints ──────────────────────────────────────
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasRole("ADMIN")
 
-                // ── Moderation endpoints ──────────────────────────────────────
-                .requestMatchers("/api/v1/moderation/**")
-                    .hasAnyRole("ADMIN", "MODERATOR")
+                        // ── Moderation endpoints ──────────────────────────────────────
+                        .requestMatchers("/api/v1/moderation/**")
+                        .hasAnyRole("ADMIN", "MODERATOR")
 
-                // ── Everything else requires authentication ────────────────────
-                .anyRequest().authenticated()
-            )
+                        // ── Everything else requires authentication ────────────────────
+                        .anyRequest().authenticated()
+                )
 
-            // ── Custom error handlers ─────────────────────────────────────────
-            .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(authenticationEntryPoint)
-                .accessDeniedHandler(accessDeniedHandler))
+                // ── Custom error handlers ─────────────────────────────────────────
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
 
-            // ── Authentication provider ───────────────────────────────────────
-            .authenticationProvider(authenticationProvider())
+                // ── Authentication provider ───────────────────────────────────────
+                .authenticationProvider(authenticationProvider())
 
-            // ── Filter order ──────────────────────────────────────────────────
-            // Rate limit runs first → then JWT auth
-            .addFilterBefore(rateLimitingFilter,          UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(jwtAuthenticationFilter,     UsernamePasswordAuthenticationFilter.class);
+                // ── Filter order: RateLimiting → JwtAuth → UsernamePassword ──────────
+                // addFilterBefore(A, X) inserts A immediately before X.
+                // First anchor Jwt before UsernamePassword, then insert RateLimiting before Jwt.
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(rateLimitingFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
@@ -182,30 +185,31 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         config.setAllowedOrigins(List.of(
-            "https://nexthouse.app",
-            "https://www.nexthouse.app",
-            "http://localhost:3000",   // React dev server
-            "http://localhost:8080"    // Swagger UI
+                "https://nexthouse.app",
+                "https://www.nexthouse.app",
+                "http://localhost:3000",   // React dev server
+                "http://localhost:3001",  // Frontend
+                "http://localhost:8080"// Swagger UI
         ));
 
         config.setAllowedMethods(List.of(
-            "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
         ));
 
         config.setAllowedHeaders(List.of(
-            "Authorization",
-            "Content-Type",
-            "Accept",
-            "X-Requested-With",
-            "Cache-Control",
-            "X-Device-Id",
-            "X-Device-Type"
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "X-Requested-With",
+                "Cache-Control",
+                "X-Device-Id",
+                "X-Device-Type"
         ));
 
         config.setExposedHeaders(List.of(
-            "X-RateLimit-Limit",
-            "X-RateLimit-Remaining",
-            "X-RateLimit-Reset"
+                "X-RateLimit-Limit",
+                "X-RateLimit-Remaining",
+                "X-RateLimit-Reset"
         ));
 
         config.setAllowCredentials(true);
@@ -220,9 +224,9 @@ public class SecurityConfig {
 
     /**
      * DaoAuthenticationProvider wires together:
-     *   - UserDetailsService (loads user from DB)
-     *   - PasswordEncoder (BCrypt verification)
-     *
+     * - UserDetailsService (loads user from DB)
+     * - PasswordEncoder (BCrypt verification)
+     * <p>
      * Used by AuthenticationManager during login
      * (AuthService.login() → authenticationManager.authenticate()).
      */
@@ -244,7 +248,7 @@ public class SecurityConfig {
 
     /**
      * BCryptPasswordEncoder with strength 12.
-     *
+     * <p>
      * Strength (cost factor) 12 → ~250ms per hash on modern hardware.
      * This is intentionally slow to resist brute-force attacks.
      * Default (10) → ~100ms. Increase to 13 for extra security on powerful servers.

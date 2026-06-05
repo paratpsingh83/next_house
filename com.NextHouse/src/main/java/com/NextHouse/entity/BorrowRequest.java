@@ -3,6 +3,7 @@ package com.NextHouse.entity;
 import com.NextHouse.constant.BorrowStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -30,6 +31,7 @@ public class BorrowRequest extends CommunityScopedEntity {
     @Column(name = "required_duration", length = 100)
     private String requiredDuration;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private BorrowStatus status = BorrowStatus.OPEN;

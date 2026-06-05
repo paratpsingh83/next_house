@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.math.BigDecimal;
@@ -42,18 +43,22 @@ public class MarketplaceItem extends CommunityScopedEntity {
     @Column(name = "condition_type", length = 20)
     private String conditionType;
 
+    @Builder.Default
     @Column(name = "negotiable", nullable = false)
     private Boolean negotiable = false;
 
+    @Builder.Default
     @Column(name = "available", nullable = false)
     private Boolean available = true;
 
+    @Builder.Default
     @Column(name = "featured", nullable = false)
     private Boolean featured = false;
 
     /**
      * ACTIVE | SOLD | REMOVED | EXPIRED
      */
+    @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
     private String status = "ACTIVE";
 

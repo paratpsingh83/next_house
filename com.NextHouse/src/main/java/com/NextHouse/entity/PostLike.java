@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -28,6 +29,7 @@ public class PostLike extends BaseEntity {
     /**
      * LIKE | HEART | HELPFUL | CELEBRATE | CURIOUS — extensible reaction type.
      */
+    @Builder.Default
     @Column(name = "reaction_type", nullable = false, length = 20)
     private String reactionType = "LIKE";
 

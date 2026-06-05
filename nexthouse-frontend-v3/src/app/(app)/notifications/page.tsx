@@ -2,7 +2,7 @@
 // src/app/(app)/notifications/page.tsx
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { Bell, Loader2, CheckCheck, Heart, MessageCircle, Users, ShoppingBag, Shield, Zap, UserPlus, Star, AlertTriangle } from 'lucide-react';
+import { Bell, Loader2, CheckCheck, Heart, MessageCircle, Users, Zap, UserPlus, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { notificationsApi } from '@/api';
 import { useAppDispatch } from '@/store';
 import { markAllRead, markOneRead, setUnread } from '@/store/slices/notifSlice';
@@ -11,28 +11,34 @@ import type { NotificationResponse } from '@/types';
 import toast from 'react-hot-toast';
 
 // ── Map notification type → icon + color + navigation ────────────────────────
+// Keys match backend notification_type CHECK constraint exactly:
+// LIKE | COMMENT | FOLLOW | ACTIVITY_JOIN_REQUEST | ACTIVITY_APPROVED | ACTIVITY_REJECTED
+// COMMUNITY_JOIN_REQUEST | COMMUNITY_APPROVED | SAFETY_ALERT | SYSTEM | MESSAGE
 const NOTIF_CONFIG: Record<string, {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   bg:    string;
   color: string;
   getUrl: (n: NotificationResponse) => string | null;
 }> = {
-  POST_LIKE:       { icon: Heart,          bg: 'bg-red-100',     color: 'text-red-500',     getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
-  POST_COMMENT:    { icon: MessageCircle,  bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
-  POST_SHARE:      { icon: MessageCircle,  bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
-  NEW_FOLLOWER:    { icon: UserPlus,       bg: 'bg-primary-100', color: 'text-primary-600', getUrl: n => n.referenceId ? `/profile/${n.referenceId}` : null },
-  COMMUNITY_JOIN:  { icon: Users,          bg: 'bg-purple-100',  color: 'text-purple-600',  getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
-  COMMUNITY_INVITE:{ icon: Users,          bg: 'bg-purple-100',  color: 'text-purple-600',  getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
-  ACTIVITY_JOIN:   { icon: Zap,            bg: 'bg-orange-100',  color: 'text-orange-500',  getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
-  ACTIVITY_INVITE: { icon: Zap,            bg: 'bg-orange-100',  color: 'text-orange-500',  getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
-  ACTIVITY_APPROVED:{ icon: Zap,           bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
-  MARKETPLACE_INTEREST:{ icon: ShoppingBag,bg: 'bg-yellow-100',  color: 'text-yellow-600',  getUrl: n => n.referenceId ? `/marketplace/${n.referenceId}` : null },
-  SAFETY_ALERT:    { icon: AlertTriangle,  bg: 'bg-red-100',     color: 'text-red-600',     getUrl: n => n.referenceId ? `/safety` : null },
-  TRUST_SCORE:     { icon: Star,           bg: 'bg-yellow-100',  color: 'text-yellow-500',  getUrl: _ => `/settings/profile` },
-  COMMENT_LIKE:    { icon: Heart,          bg: 'bg-red-100',     color: 'text-red-500',     getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
+  LIKE:                    { icon: Heart,         bg: 'bg-red-100',     color: 'text-red-500',     getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
+  COMMENT:                 { icon: MessageCircle, bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
+  FOLLOW:                  { icon: UserPlus,      bg: 'bg-primary-100', color: 'text-primary-600', getUrl: n => n.referenceId ? `/profile/${n.referenceId}` : null },
+  ACTIVITY_JOIN_REQUEST:   { icon: Zap,           bg: 'bg-orange-100',  color: 'text-orange-500',  getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
+  ACTIVITY_APPROVED:       { icon: Zap,           bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
+  ACTIVITY_REJECTED:       { icon: Zap,           bg: 'bg-red-100',     color: 'text-red-400',     getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
+  COMMUNITY_JOIN_REQUEST:  { icon: Users,         bg: 'bg-purple-100',  color: 'text-purple-600',  getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
+  COMMUNITY_APPROVED:      { icon: Users,         bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
+  SAFETY_ALERT:            { icon: AlertTriangle, bg: 'bg-red-100',     color: 'text-red-600',     getUrl: _ => `/safety` },
+  MESSAGE:                 { icon: MessageCircle, bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/chat/${n.referenceId}` : null },
+  SYSTEM:                  { icon: Bell,          bg: 'bg-gray-100',    color: 'text-gray-500',    getUrl: n => n.redirectUrl ?? null },
 };
 
-const DEFAULT_CONFIG = {
+const DEFAULT_CONFIG: {
+  icon: LucideIcon;
+  bg: string;
+  color: string;
+  getUrl: (n: NotificationResponse) => string | null;
+} = {
   icon:   Bell,
   bg:     'bg-gray-100',
   color:  'text-gray-500',
@@ -107,7 +113,7 @@ export default function NotificationsPage() {
     if (url) router.push(url);
   };
 
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
+  const handleDelete = async (id: number, e: { stopPropagation: () => void }) => {
     e.stopPropagation();
     try {
       await notificationsApi.delete(id);

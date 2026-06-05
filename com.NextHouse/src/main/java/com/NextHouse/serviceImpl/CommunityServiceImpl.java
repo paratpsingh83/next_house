@@ -99,6 +99,7 @@ public class CommunityServiceImpl implements CommunityService {
                 .user(creator)
                 .role(CommunityRole.OWNER)
                 .approved(true)
+                .muted(false)
                 .notificationsEnabled(true)
                 .build();
         memberRepository.save(ownerMember);
@@ -196,6 +197,7 @@ public class CommunityServiceImpl implements CommunityService {
                 .user(user)
                 .role(CommunityRole.MEMBER)
                 .approved(autoApprove)
+                .muted(false)
                 .notificationsEnabled(true)
                 .build();
         memberRepository.save(membership);

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
 import { MapPin, Users, TrendingUp, Loader2, PlusCircle } from 'lucide-react';
-import { postsApi } from '@/api';
+import { postsApi, neighborhoodsApi, usersApi } from '@/api';
 import PostCard from '@/components/post/PostCard';
 import CreatePostModal from '@/components/post/CreatePostModal';
 import { useAppSelector } from '@/store';
@@ -17,11 +17,18 @@ export default function FeedPage() {
   const [loc, setLoc]           = useState({ lat: 3.139, lon: 101.6869 });
   const user = useAppSelector(s => s.auth.user);
 
+  const [neighborhoodId, setNeighborhoodId] = useState<number>(1);
+
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      p => setLoc({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      () => {} // silent fallback to Kuala Lumpur
-    );
+    navigator.geolocation?.getCurrentPosition(p => {
+      const lat = p.coords.latitude;
+      const lon = p.coords.longitude;
+      setLoc({ lat, lon });
+      // Keep backend location in sync so nearby queries work correctly
+      usersApi.updateLocation({ latitude: lat, longitude: lon }).catch(() => {});
+      // Detect the actual neighborhood for the trending feed
+      neighborhoodsApi.detect(lat, lon).then(n => { if (n?.id) setNeighborhoodId(n.id); }).catch(() => {});
+    });
   }, []);
 
   const nearby = useInfiniteQuery({
@@ -41,8 +48,8 @@ export default function FeedPage() {
   });
 
   const trending = useInfiniteQuery({
-    queryKey: ['feed', 'trending'],
-    queryFn:  ({ pageParam = 0 }) => postsApi.trendingFeed(1, pageParam),
+    queryKey: ['feed', 'trending', neighborhoodId],
+    queryFn:  ({ pageParam = 0 }) => postsApi.trendingFeed(neighborhoodId, pageParam),
     getNextPageParam: l => (l.hasNext ? l.page + 1 : undefined),
     initialPageParam: 0,
     enabled: tab === 'trending',

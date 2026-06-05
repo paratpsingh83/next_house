@@ -1,8 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import { useEffect } from 'react';
 import { Loader2, Users, Search } from 'lucide-react';
 import { communitiesApi } from '@/api';
 import Link from 'next/link';
@@ -11,8 +10,14 @@ import toast from 'react-hot-toast';
 export default function CommunitiesPage() {
   const [tab, setTab] = useState<'mine' | 'discover'>('mine');
   const [q, setQ] = useState('');
+  const [loc, setLoc] = useState({ lat: 3.139, lon: 101.6869 });
+
+  useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(p => setLoc({ lat: p.coords.latitude, lon: p.coords.longitude }));
+  }, []);
+
   const mine = useInfiniteQuery({ queryKey:['communities','mine'], queryFn:({pageParam=0})=>communitiesApi.mine(pageParam), getNextPageParam:l=>l.hasNext?l.page+1:undefined, initialPageParam:0, enabled:tab==='mine' });
-  const discover = useInfiniteQuery({ queryKey:['communities','search',q], queryFn:({pageParam=0})=>q.length>1?communitiesApi.search(q,pageParam):communitiesApi.nearby(3.139,101.6869,10000,pageParam), getNextPageParam:l=>l.hasNext?l.page+1:undefined, initialPageParam:0, enabled:tab==='discover' });
+  const discover = useInfiniteQuery({ queryKey:['communities','search',q,loc.lat,loc.lon], queryFn:({pageParam=0})=>q.length>1?communitiesApi.search(q,pageParam):communitiesApi.nearby(loc.lat,loc.lon,10000,pageParam), getNextPageParam:l=>l.hasNext?l.page+1:undefined, initialPageParam:0, enabled:tab==='discover' });
   const active = tab === 'mine' ? mine : discover;
   const items = active.data?.pages.flatMap(p=>p.content)??[];
   const { ref, inView } = useInView({ threshold:0.1 });

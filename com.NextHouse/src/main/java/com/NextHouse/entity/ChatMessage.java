@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 @SuperBuilder
 public class ChatMessage extends BaseEntity {
 
+    @Builder.Default
     @Column(name = "message_type", nullable = false, length = 20)
     private String messageType = "TEXT";
 

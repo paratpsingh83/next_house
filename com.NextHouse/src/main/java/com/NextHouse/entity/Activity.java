@@ -4,6 +4,7 @@ import com.NextHouse.constant.ActivityStatus;
 import com.NextHouse.constant.ActivityType;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -47,12 +48,15 @@ public class Activity extends CommunityScopedEntity {
     @Column(name = "cover_image", length = 500)
     private String coverImage;
 
+    @Builder.Default
     @Column(name = "private_activity", nullable = false)
     private Boolean privateActivity = false;
 
+    @Builder.Default
     @Column(name = "approval_required", nullable = false)
     private Boolean approvalRequired = false;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private ActivityStatus status = ActivityStatus.PUBLISHED;

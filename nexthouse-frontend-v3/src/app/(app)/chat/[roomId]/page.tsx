@@ -66,7 +66,6 @@ export default function ChatRoomPage() {
     const cancelDeferred = wsClient.onceConnected(() => {
       unsubMsg = wsClient.onRoomMessage(rId, msg => {
         dispatch(appendMessage({ roomId: rId, message: msg }));
-        qc.invalidateQueries({ queryKey: ['chat','history', rId] });
         wsClient.markRead(rId);
       });
       unsubTyping = wsClient.onTyping(rId, ({ userId, typing }) => {
@@ -95,22 +94,25 @@ export default function ChatRoomPage() {
   // ── Send message ──────────────────────────────────────────────────────────
   const send = useCallback(async () => {
     if (!text.trim()) return;
-    setSending(true);
+    if (!wsClient.isConnected()) {
+      toast.error('Not connected. Please wait…');
+      return;
+    }
     const msg = text;
     setText('');
+    setReplyTo(null);
     wsClient.sendTyping(rId, false);
     try {
-      await chatApi.sendMessage(rId, {
-        message:         msg,
-        messageType:     'TEXT',
+      // Send via WebSocket — the server broadcasts back to all subscribers including us
+      wsClient.sendMessage(rId, {
+        message:          msg,
+        messageType:      'TEXT',
         replyToMessageId: replyTo?.id,
       });
-      setReplyTo(null);
-      qc.invalidateQueries({ queryKey: ['chat','history', rId] });
     } catch {
       setText(msg);
       toast.error('Failed to send');
-    } finally { setSending(false); }
+    }
   }, [text, rId, replyTo]);
 
   const handleKey = (e: React.KeyboardEvent) => {

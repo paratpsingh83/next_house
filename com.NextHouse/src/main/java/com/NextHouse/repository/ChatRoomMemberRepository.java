@@ -22,14 +22,19 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
 
     /**
      * Count unread messages for a user in a room.
+     * Uses native query with explicit ::timestamp cast so PostgreSQL can type
+     * the parameter even when lastReadAt is null (JPQL generates an untyped $n
+     * in the IS NULL check which PostgreSQL rejects with "could not determine
+     * data type of parameter").
      */
-    @Query("""
-            SELECT COUNT(m) FROM ChatMessage m
-            WHERE m.room.id = :roomId
-              AND m.isDeleted = false
-              AND (:lastReadAt IS NULL OR m.createdAt > :lastReadAt)
-              AND m.sender.id <> :userId
-            """)
+    @Query(value = """
+            SELECT COUNT(cm.id)
+            FROM chat_messages cm
+            WHERE cm.room_id = :roomId
+              AND cm.is_deleted = false
+              AND (CAST(:lastReadAt AS timestamp) IS NULL OR cm.created_at > CAST(:lastReadAt AS timestamp))
+              AND cm.sender_id <> :userId
+            """, nativeQuery = true)
     long countUnreadMessages(
             @Param("roomId") Long roomId,
             @Param("userId") Long userId,

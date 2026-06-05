@@ -25,53 +25,52 @@ import java.util.List;
 
 /**
  * WebSocketConfig
- *
+ * <p>
  * Configures STOMP over WebSocket for real-time features:
- *   - Chat messaging
- *   - Typing indicators
- *   - Presence (online/offline)
- *   - Notifications
- *   - Live activity updates
- *
+ * - Chat messaging
+ * - Typing indicators
+ * - Presence (online/offline)
+ * - Notifications
+ * - Live activity updates
+ * <p>
  * Connection flow:
- *   1. Client connects to ws://host/ws?token={jwt}  (or sets Authorization header).
- *   2. JwtChannelInterceptor validates the JWT on CONNECT frame.
- *   3. Sets the UsernamePasswordAuthenticationToken as the session principal.
- *   4. Spring Security principal is now available in all @MessageMapping handlers.
- *
+ * 1. Client connects to ws://host/ws?token={jwt}  (or sets Authorization header).
+ * 2. JwtChannelInterceptor validates the JWT on CONNECT frame.
+ * 3. Sets the UsernamePasswordAuthenticationToken as the session principal.
+ * 4. Spring Security principal is now available in all @MessageMapping handlers.
+ * <p>
  * Destination prefixes:
- *   /app/{path}            → @MessageMapping handlers (client sends TO server)
- *   /topic/{path}          → Broadcast (server sends TO all subscribers)
- *   /user/{userId}/queue/{path} → Unicast (server sends TO specific user)
- *
+ * /app/{path}            → @MessageMapping handlers (client sends TO server)
+ * /topic/{path}          → Broadcast (server sends TO all subscribers)
+ * /user/{userId}/queue/{path} → Unicast (server sends TO specific user)
+ * <p>
  * Client subscriptions:
- *   /user/queue/notifications     → personal notification bell
- *   /user/queue/presence          → followers' presence changes
- *   /topic/rooms/{roomId}/messages → group/direct chat
- *   /topic/rooms/{roomId}/typing  → typing indicators
- *   /topic/presence/{userId}      → specific user's online status
- *
+ * /user/queue/notifications     → personal notification bell
+ * /user/queue/presence          → followers' presence changes
+ * /topic/rooms/{roomId}/messages → group/direct chat
+ * /topic/rooms/{roomId}/typing  → typing indicators
+ * /topic/presence/{userId}      → specific user's online status
+ * <p>
  * In-memory broker:
- *   Currently using Spring's in-memory broker (SimpleBroker).
- *   For production scale (multi-node): switch to a full message broker:
+ * Currently using Spring's in-memory broker (SimpleBroker).
+ * For production scale (multi-node): switch to a full message broker:
  *
- *     @Override
- *     public void configureMessageBroker(MessageBrokerRegistry registry) {
- *         registry.enableStompBrokerRelay("/topic", "/queue")
- *                 .setRelayHost("rabbitmq-host")
- *                 .setRelayPort(61613)
- *                 .setClientLogin("guest")
- *                 .setClientPasscode("guest");
- *     }
- *
- *   This enables WebSocket state to survive server restarts and work across
- *   multiple pods (horizontal scaling).
- *
+ * @Override public void configureMessageBroker(MessageBrokerRegistry registry) {
+ * registry.enableStompBrokerRelay("/topic", "/queue")
+ * .setRelayHost("rabbitmq-host")
+ * .setRelayPort(61613)
+ * .setClientLogin("guest")
+ * .setClientPasscode("guest");
+ * }
+ * <p>
+ * This enables WebSocket state to survive server restarts and work across
+ * multiple pods (horizontal scaling).
+ * <p>
  * Maven dependency:
- *   <dependency>
- *     <groupId>org.springframework.boot</groupId>
- *     <artifactId>spring-boot-starter-websocket</artifactId>
- *   </dependency>
+ * <dependency>
+ * <groupId>org.springframework.boot</groupId>
+ * <artifactId>spring-boot-starter-websocket</artifactId>
+ * </dependency>
  */
 @Slf4j
 @Configuration
@@ -87,10 +86,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(
-                    "https://nexthouse.app",
-                    "https://www.nexthouse.app",
-                    "http://localhost:3000",
-                    "http://localhost:8080"
+                        "https://nexthouse.app",
+                        "https://www.nexthouse.app",
+                        "http://localhost:3000",
+                        "http://localhost:3001",
+                        "http://localhost:8080"
                 )
                 .withSockJS();  // SockJS fallback for browsers that don't support WebSocket
     }
@@ -121,7 +121,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     /**
      * Validates the JWT on every STOMP CONNECT frame.
      * Sets the Spring Security principal so @MessageMapping methods can inject it.
-     *
+     * <p>
      * Token location: STOMP header  Authorization: Bearer {token}
      * or query param: ws://host/ws?token={jwt}  (extracted from native headers)
      */
@@ -133,7 +133,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         @Override
         public Message<?> preSend(Message<?> message, MessageChannel channel) {
             StompHeaderAccessor accessor =
-                MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+                    MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
             if (accessor == null) return message;
 
@@ -145,11 +145,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     String role = jwtTokenProvider.extractRole(token);
 
                     UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                            userId.toString(),
-                            null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                        );
+                            new UsernamePasswordAuthenticationToken(
+                                    userId.toString(),
+                                    null,
+                                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                            );
 
                     accessor.setUser(auth);
                     log.debug("[WS] CONNECT authenticated: userId={}", userId);

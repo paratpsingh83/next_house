@@ -119,14 +119,18 @@ public class UserPresenceServiceImpl implements UserPresenceService {
      * This refreshes the Redis TTL — preventing premature expiry.
      */
     @Override
+    @Transactional
     public void heartbeat(Long userId) {
         String key = presenceKey(userId);
-        // Only refresh if key exists (user is supposed to be online)
         Boolean exists = redisTemplate.hasKey(key);
         if (Boolean.TRUE.equals(exists)) {
             redisTemplate.expire(key, Duration.ofSeconds(PRESENCE_TTL_SECONDS));
-            // Update lastSeen in DB asynchronously via @Modifying query (no entity load)
-            presenceRepository.updatePresence(userId, true, LocalDateTime.now(), null);
+            // Only update lastSeen — do NOT overwrite socketId (use updatePresence variant
+            // that preserves the existing socket_id by fetching and re-saving)
+            presenceRepository.findByUserId(userId).ifPresent(p -> {
+                p.setLastSeen(LocalDateTime.now());
+                presenceRepository.save(p);
+            });
         }
     }
 

@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -23,9 +24,11 @@ public class PostComment extends BaseEntity {
     @Column(name = "comment", nullable = false, columnDefinition = "TEXT")
     private String comment;
 
+    @Builder.Default
     @Column(name = "like_count", nullable = false)
     private Integer likeCount = 0;
 
+    @Builder.Default
     @Column(name = "edited", nullable = false)
     private Boolean edited = false;
 

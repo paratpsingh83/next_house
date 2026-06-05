@@ -26,6 +26,12 @@ export const wsClient = {
 
     client = new Client({
       webSocketFactory: () => new (SockJS as any)(WS_URL),
+      // beforeConnect runs before every connect attempt (including reconnects),
+      // so the token is always fresh even after an HTTP token refresh.
+      beforeConnect: () => {
+        const freshToken = tokens.getAccess();
+        if (client) client.connectHeaders = { Authorization: `Bearer ${freshToken}` };
+      },
       connectHeaders: { Authorization: `Bearer ${token}` },
       heartbeatIncoming: 25000,
       heartbeatOutgoing: 25000,

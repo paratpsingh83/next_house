@@ -3,6 +3,7 @@ package com.NextHouse.entity;
 import com.NextHouse.constant.PostStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -39,6 +40,7 @@ public class Post extends CommunityScopedEntity {
     @Column(name = "visibility_radius")
     private Integer visibilityRadius;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private PostStatus status = PostStatus.PUBLISHED;
@@ -48,18 +50,23 @@ public class Post extends CommunityScopedEntity {
      *
      * @Version prevents full lost-update on concurrent writes.
      */
+    @Builder.Default
     @Column(name = "like_count", nullable = false)
     private Integer likeCount = 0;
 
+    @Builder.Default
     @Column(name = "comment_count", nullable = false)
     private Integer commentCount = 0;
 
+    @Builder.Default
     @Column(name = "share_count", nullable = false)
     private Integer shareCount = 0;
 
+    @Builder.Default
     @Column(name = "anonymous", nullable = false)
     private Boolean anonymous = false;
 
+    @Builder.Default
     @Column(name = "edited", nullable = false)
     private Boolean edited = false;
 

@@ -48,7 +48,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // ─── Geo — Nearby users ───────────────────────────────────────────────────
 
     @Query(value = """
-            SELECT DISTINCT u.*
+            SELECT u.*
             FROM users u
             LEFT JOIN user_neighborhoods un ON un.user_id = u.id AND un.primary_neighborhood = true
             LEFT JOIN neighborhoods n       ON n.id = un.neighborhood_id
@@ -59,16 +59,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
               AND (u.location IS NOT NULL OR n.location IS NOT NULL)
               AND NOT EXISTS (
                   SELECT 1 FROM blocked_users b
-                  WHERE (b.blocker_id = :currentUserId AND b.blocked_id = u.id)
-                     OR (b.blocker_id = u.id AND b.blocked_id = :currentUserId)
+                  WHERE (b.user_id = :currentUserId AND b.blocked_user_id = u.id)
+                     OR (b.user_id = u.id AND b.blocked_user_id = :currentUserId)
               )
               AND ST_DWithin(
-                    COALESCE(n.location::geography, u.location::geography),
+                    COALESCE(n.location, u.location)::geography,
                     ST_MakePoint(:longitude, :latitude)::geography,
                     :radiusMeters
                   )
             ORDER BY ST_Distance(
-                        COALESCE(n.location::geography, u.location::geography),
+                        COALESCE(n.location, u.location)::geography,
                         ST_MakePoint(:longitude, :latitude)::geography
                      )
             LIMIT :limitCount

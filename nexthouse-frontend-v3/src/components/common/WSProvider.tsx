@@ -37,6 +37,16 @@ export default function WSProvider({ children }: { children: React.ReactNode }) 
           dispatch(prepend(notif));
           if (notif.notificationType === 'SAFETY_ALERT') {
             toast(`🚨 ${notif.title}`, { duration: 8000, style: { background: '#dc2626', color: '#fff', borderRadius: '12px' } });
+          } else if (notif.notificationType === 'FOLLOW') {
+            toast(`${notif.sender?.name ?? 'Someone'} started following you`, { duration: 4000 });
+          } else if (notif.notificationType === 'COMMENT') {
+            toast(`New comment on your post`, { duration: 4000 });
+          } else if (notif.notificationType === 'LIKE') {
+            toast(`${notif.sender?.name ?? 'Someone'} reacted to your post`, { duration: 3000 });
+          } else if (notif.notificationType === 'ACTIVITY_JOIN_REQUEST') {
+            toast(notif.title, { duration: 5000 });
+          } else if (notif.notificationType === 'COMMUNITY_JOIN_REQUEST') {
+            toast(notif.title, { duration: 5000 });
           }
         });
 

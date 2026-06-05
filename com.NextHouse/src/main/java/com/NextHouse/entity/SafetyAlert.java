@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -40,9 +41,11 @@ public class SafetyAlert extends CommunityScopedEntity {
     @Column(name = "severity", nullable = false, length = 20)
     private String severity;
 
+    @Builder.Default
     @Column(name = "emergency", nullable = false)
     private Boolean emergency = false;
 
+    @Builder.Default
     @Column(name = "verified", nullable = false)
     private Boolean verified = false;
 

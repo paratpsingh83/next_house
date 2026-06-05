@@ -259,7 +259,7 @@ public class UserServiceImpl implements UserService {
         boolean isFollowing  = false;
         boolean isFollowedBy = false;
         boolean isBlocked    = false;
-        if (!requestingUserId.equals(user.getId())) {
+        if (requestingUserId != null && !requestingUserId.equals(user.getId())) {
             isFollowing  = followRepository.existsByFollowerIdAndFollowingId(requestingUserId, user.getId());
             isFollowedBy = followRepository.existsByFollowerIdAndFollowingId(user.getId(), requestingUserId);
             isBlocked    = blockedUserRepository.existsByUserIdAndBlockedUserId(requestingUserId, user.getId());
