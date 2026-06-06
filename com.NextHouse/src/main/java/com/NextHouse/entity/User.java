@@ -71,9 +71,21 @@ public class User extends GeoBaseEntity {   // ← FIX: was "extends BaseEntity"
     @Column(name = "address_verified", nullable = false)
     private Boolean addressVerified = false;
 
+    @Column(name = "address_doc_type", length = 50)
+    private String addressDocType;
+
+    @Column(name = "address_doc_media_id")
+    private Long addressDocMediaId;
+
     @Builder.Default
     @Column(name = "identity_verified", nullable = false)
     private Boolean identityVerified = false;
+
+    @Column(name = "identity_doc_type", length = 50)
+    private String identityDocType;
+
+    @Column(name = "identity_doc_media_id")
+    private Long identityDocMediaId;
 
     @Builder.Default
     @Column(name = "banned", nullable = false)

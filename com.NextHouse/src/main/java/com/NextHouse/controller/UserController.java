@@ -5,6 +5,7 @@ import com.NextHouse.dto.common.PageResponseDTO;
 import com.NextHouse.dto.request.NearbySearchRequestDTO;
 import com.NextHouse.dto.request.UpdateLocationRequestDTO;
 import com.NextHouse.dto.request.UpdateProfileRequestDTO;
+import com.NextHouse.dto.request.VerificationRequestDTO;
 import com.NextHouse.dto.response.FollowRequestResponseDTO;
 import com.NextHouse.dto.response.NearbyUserResponseDTO;
 import com.NextHouse.dto.response.UserResponseDTO;
@@ -253,22 +254,36 @@ public class UserController {
     @PostMapping("/me/verify-address")
     @PreAuthorize("isAuthenticated()")
     @Operation(
-        summary = "Request address verification",
-        description = "Marks the user's address as verified. Requires address to be set in profile. Adds +10 trust score."
+        summary = "Submit address verification",
+        description = """
+            Verifies the user's address using an uploaded document.
+            **docType options:** UTILITY_BILL, RENTAL_AGREEMENT, BANK_STATEMENT, GOVERNMENT_LETTER, PROPERTY_TAX
+            Upload the document first via POST /api/v1/media/upload (entityType=USER), then pass the returned mediaId here.
+            Adds +10 trust score on success.
+            """
     )
-    public ResponseEntity<ApiResponseDTO<Void>> verifyAddress(@CurrentUser Long currentUserId) {
-        userService.requestAddressVerification(currentUserId);
+    public ResponseEntity<ApiResponseDTO<Void>> verifyAddress(
+            @CurrentUser Long currentUserId,
+            @Valid @RequestBody VerificationRequestDTO dto) {
+        userService.requestAddressVerification(currentUserId, dto.getDocType(), dto.getMediaId());
         return ResponseEntity.ok(ApiResponseDTO.success("Address verified successfully"));
     }
 
     @PostMapping("/me/verify-identity")
     @PreAuthorize("isAuthenticated()")
     @Operation(
-        summary = "Request identity verification",
-        description = "Marks the user's identity as verified. Adds +20 trust score."
+        summary = "Submit identity verification",
+        description = """
+            Verifies the user's identity using a government-issued document.
+            **docType options:** AADHAAR, PASSPORT, DRIVING_LICENSE, NATIONAL_ID, VOTER_ID
+            Upload the document first via POST /api/v1/media/upload (entityType=USER), then pass the returned mediaId here.
+            Adds +20 trust score on success.
+            """
     )
-    public ResponseEntity<ApiResponseDTO<Void>> verifyIdentity(@CurrentUser Long currentUserId) {
-        userService.requestIdentityVerification(currentUserId);
+    public ResponseEntity<ApiResponseDTO<Void>> verifyIdentity(
+            @CurrentUser Long currentUserId,
+            @Valid @RequestBody VerificationRequestDTO dto) {
+        userService.requestIdentityVerification(currentUserId, dto.getDocType(), dto.getMediaId());
         return ResponseEntity.ok(ApiResponseDTO.success("Identity verified successfully"));
     }
 }

@@ -9,6 +9,7 @@ import com.NextHouse.event.KafkaEventPublisher;
 import com.NextHouse.exception.*;
 import com.NextHouse.mapper.UserMapper;
 import com.NextHouse.repository.*;
+import com.NextHouse.entity.MediaFile;
 import com.NextHouse.service.NotificationService;
 import com.NextHouse.service.UserService;
 import com.NextHouse.util.geo.GeoUtils;
@@ -38,6 +39,7 @@ public class UserServiceImpl implements UserService {
     private final UserNeighborhoodRepository userNeighborhoodRepository;
     private final UserPresenceRepository     userPresenceRepository;
     private final NeighborhoodRepository     neighborhoodRepository;
+    private final MediaFileRepository        mediaFileRepository;
 
     private final UserMapper            userMapper;
     private final GeoUtils              geoUtils;
@@ -312,13 +314,25 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
     }
 
+    private static final java.util.Set<String> VALID_IDENTITY_DOC_TYPES = java.util.Set.of(
+            "AADHAAR", "PASSPORT", "DRIVING_LICENSE", "NATIONAL_ID", "VOTER_ID");
+
+    private static final java.util.Set<String> VALID_ADDRESS_DOC_TYPES = java.util.Set.of(
+            "UTILITY_BILL", "RENTAL_AGREEMENT", "BANK_STATEMENT", "GOVERNMENT_LETTER", "PROPERTY_TAX");
+
     @Override
     @Transactional
-    public void requestAddressVerification(Long currentUserId) {
+    public void requestAddressVerification(Long currentUserId, String docType, Long mediaId) {
         User user = findUserOrThrow(currentUserId);
         if (user.getAddressVerified()) throw new BadRequestException("Address is already verified");
-        if (user.getAddress() == null || user.getAddress().isBlank())
-            throw new BadRequestException("Please set your address in your profile before requesting verification");
+        if (!VALID_ADDRESS_DOC_TYPES.contains(docType))
+            throw new BadRequestException("Invalid document type. Accepted: Utility Bill, Rental Agreement, Bank Statement, Government Letter, Property Tax");
+        MediaFile doc = mediaFileRepository.findById(mediaId)
+                .orElseThrow(() -> new BadRequestException("Document not found. Please upload the document first"));
+        if (!doc.getUploadedBy().getId().equals(currentUserId))
+            throw new BadRequestException("Document does not belong to you");
+        user.setAddressDocType(docType);
+        user.setAddressDocMediaId(mediaId);
         user.setAddressVerified(true);
         user.setTrustScore(user.getTrustScore() + 10);
         userRepository.save(user);
@@ -326,9 +340,17 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void requestIdentityVerification(Long currentUserId) {
+    public void requestIdentityVerification(Long currentUserId, String docType, Long mediaId) {
         User user = findUserOrThrow(currentUserId);
         if (user.getIdentityVerified()) throw new BadRequestException("Identity is already verified");
+        if (!VALID_IDENTITY_DOC_TYPES.contains(docType))
+            throw new BadRequestException("Invalid document type. Accepted: Aadhaar, Passport, Driving License, National ID, Voter ID");
+        MediaFile doc = mediaFileRepository.findById(mediaId)
+                .orElseThrow(() -> new BadRequestException("Document not found. Please upload the document first"));
+        if (!doc.getUploadedBy().getId().equals(currentUserId))
+            throw new BadRequestException("Document does not belong to you");
+        user.setIdentityDocType(docType);
+        user.setIdentityDocMediaId(mediaId);
         user.setIdentityVerified(true);
         user.setVerificationStatus("VERIFIED");
         user.setTrustScore(user.getTrustScore() + 20);

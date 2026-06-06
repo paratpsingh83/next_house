@@ -1,28 +1,14 @@
 'use client';
-// src/app/(app)/my/activities/page.tsx
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useInView } from 'react-intersection-observer';
-import { useEffect } from 'react';
 import { Loader2, CalendarDays, MapPin, Users, PlusCircle, Crown, Zap } from 'lucide-react';
 import { activitiesApi } from '@/api';
 import { format, isPast } from 'date-fns';
 import Link from 'next/link';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { TYPE_EMOJI, STATUS_COLOR } from '@/components/activity/ActivityCard';
 
 type Tab = 'joined' | 'hosting';
-
-const TYPE_EMOJI: Record<string, string> = {
-  SOCIAL:'🎉', SPORTS:'⚽', LEARNING:'📚', VOLUNTEERING:'🤝',
-  FOOD:'🍜', ARTS:'🎨', OUTDOOR:'🌿', NEIGHBORHOOD_WATCH:'👀', OTHER:'📌',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  PUBLISHED:'bg-green-50 text-green-600',
-  FULL:     'bg-orange-50 text-orange-600',
-  CANCELLED:'bg-red-50 text-red-600',
-  COMPLETED:'bg-gray-100 text-gray-500',
-  EXPIRED:  'bg-gray-100 text-gray-400',
-};
 
 export default function MyActivitiesPage() {
   const [tab, setTab] = useState<Tab>('joined');
@@ -43,18 +29,14 @@ export default function MyActivitiesPage() {
     enabled: tab === 'hosting',
   });
 
-  const active = tab === 'joined' ? joinedQ : hostingQ;
-  const items  = active.data?.pages.flatMap(p => p.content) ?? [];
-
+  const active   = tab === 'joined' ? joinedQ : hostingQ;
+  const items    = active.data?.pages.flatMap(p => p.content) ?? [];
   const upcoming = items.filter(a => !isPast(new Date(a.activityTime)));
   const past     = items.filter(a =>  isPast(new Date(a.activityTime)));
 
-  const { ref, inView } = useInView({ threshold: 0.1 });
-  useEffect(() => {
-    if (inView && active.hasNextPage && !active.isFetchingNextPage) active.fetchNextPage();
-  }, [inView, active.hasNextPage, active.isFetchingNextPage]);
+  const { ref } = useInfiniteScroll(active.fetchNextPage, active.hasNextPage, active.isFetchingNextPage);
 
-  const ActivityCard = ({ a }: { a: any }) => (
+  const ActivityRow = ({ a }: { a: any }) => (
     <Link href={`/activities/${a.id}`}>
       <div className="card p-4 hover:shadow-md transition space-y-3">
         <div className="flex items-start gap-3">
@@ -80,14 +62,11 @@ export default function MyActivitiesPage() {
                 </span>
               )}
               <span className="flex items-center gap-1">
-                <Users size={11}/>
-                {a.currentMemberCount}{a.maxMembers ? `/${a.maxMembers}` : ''}
+                <Users size={11}/>{a.currentMemberCount}{a.maxMembers ? `/${a.maxMembers}` : ''}
               </span>
             </div>
           </div>
         </div>
-
-        {/* Join status for joined tab */}
         {tab === 'joined' && a.myJoinStatus && a.myJoinStatus !== 'NONE' && (
           <div className={`text-xs font-semibold px-2 py-1 rounded-lg w-fit ${
             a.myJoinStatus === 'APPROVED' ? 'bg-green-50 text-green-600' :
@@ -103,7 +82,6 @@ export default function MyActivitiesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between sticky top-0 z-10">
         <h1 className="font-bold text-gray-900">My Activities</h1>
         <Link href="/activities/create" className="btn-primary text-xs px-3 py-2 gap-1.5">
@@ -111,9 +89,8 @@ export default function MyActivitiesPage() {
         </Link>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 mx-4 mt-4 bg-white rounded-xl border border-gray-100 p-1">
-        {(['joined','hosting'] as const).map(t => (
+        {(['joined', 'hosting'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-lg text-xs font-semibold transition capitalize ${
               tab === t ? 'bg-primary-500 text-white' : 'text-gray-500'
@@ -143,22 +120,20 @@ export default function MyActivitiesPage() {
           </div>
         )}
 
-        {/* Upcoming */}
         {upcoming.length > 0 && (
           <div>
             <p className="section-title">Upcoming ({upcoming.length})</p>
             <div className="space-y-3">
-              {upcoming.map(a => <ActivityCard key={a.id} a={a}/>)}
+              {upcoming.map(a => <ActivityRow key={a.id} a={a}/>)}
             </div>
           </div>
         )}
 
-        {/* Past */}
         {past.length > 0 && (
           <div>
             <p className="section-title">Past</p>
             <div className="space-y-3 opacity-60">
-              {past.map(a => <ActivityCard key={a.id} a={a}/>)}
+              {past.map(a => <ActivityRow key={a.id} a={a}/>)}
             </div>
           </div>
         )}

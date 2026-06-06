@@ -49,7 +49,7 @@ public interface UserService {
 
     void deleteAccount(Long currentUserId);
 
-    void requestAddressVerification(Long currentUserId);
+    void requestAddressVerification(Long currentUserId, String docType, Long mediaId);
 
-    void requestIdentityVerification(Long currentUserId);
+    void requestIdentityVerification(Long currentUserId, String docType, Long mediaId);
 }

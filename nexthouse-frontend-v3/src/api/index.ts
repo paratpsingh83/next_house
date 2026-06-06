@@ -63,8 +63,8 @@ export const usersApi = {
   getFollowRequests:     ()                                => apiGet<FollowRequestItem[]>('/users/follow-requests'),
   acceptFollowRequest:   (requestId: number)               => apiPost<void>(`/users/follow-requests/${requestId}/accept`),
   rejectFollowRequest:   (requestId: number)               => apiDelete<void>(`/users/follow-requests/${requestId}`),
-  verifyAddress:         ()                                => apiPost<void>('/users/me/verify-address'),
-  verifyIdentity:        ()                                => apiPost<void>('/users/me/verify-identity'),
+  verifyAddress:         (docType: string, mediaId: number) => apiPost<void>('/users/me/verify-address', { docType, mediaId }),
+  verifyIdentity:        (docType: string, mediaId: number) => apiPost<void>('/users/me/verify-identity', { docType, mediaId }),
 };
 
 // ─── POSTS — /api/v1/posts/* ─────────────────────────────────────────────────

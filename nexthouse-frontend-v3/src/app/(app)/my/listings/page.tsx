@@ -1,21 +1,17 @@
 'use client';
-// src/app/(app)/my/listings/page.tsx
 import { useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useInView } from 'react-intersection-observer';
-import { useEffect } from 'react';
-import { Loader2, ShoppingBag, PlusCircle, CheckCircle, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ShoppingBag, PlusCircle, CheckCircle, Trash2 } from 'lucide-react';
 import { marketplaceApi } from '@/api';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 type Tab = 'active' | 'sold';
 
 export default function MyListingsPage() {
-  const router = useRouter();
-  const qc     = useQueryClient();
+  const qc  = useQueryClient();
   const [tab, setTab] = useState<Tab>('active');
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
@@ -30,33 +26,23 @@ export default function MyListingsPage() {
     ? allItems.filter(i => i.available && i.status !== 'SOLD')
     : allItems.filter(i => !i.available || i.status === 'SOLD');
 
-  const { ref, inView } = useInView({ threshold: 0.1 });
-  useEffect(() => {
-    if (inView && hasNextPage && !isFetchingNextPage) fetchNextPage();
-  }, [inView, hasNextPage, isFetchingNextPage]);
+  const { ref } = useInfiniteScroll(fetchNextPage, hasNextPage, isFetchingNextPage);
 
   const handleMarkSold = async (id: number, e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    try {
-      await marketplaceApi.markSold(id);
-      toast.success('Marked as sold!');
-      refetch();
-    } catch { toast.error('Failed'); }
+    try { await marketplaceApi.markSold(id); toast.success('Marked as sold!'); refetch(); }
+    catch { toast.error('Failed'); }
   };
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     if (!confirm('Delete this listing?')) return;
-    try {
-      await marketplaceApi.delete(id);
-      toast.success('Listing deleted');
-      refetch();
-    } catch { toast.error('Failed'); }
+    try { await marketplaceApi.delete(id); toast.success('Listing deleted'); refetch(); }
+    catch { toast.error('Failed'); }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between sticky top-0 z-10">
         <h1 className="font-bold text-gray-900">My Listings</h1>
         <Link href="/marketplace/create" className="btn-primary text-xs px-3 py-2 gap-1.5">
@@ -64,9 +50,8 @@ export default function MyListingsPage() {
         </Link>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 mx-4 mt-4 bg-white rounded-xl border border-gray-100 p-1">
-        {(['active','sold'] as const).map(t => (
+        {(['active', 'sold'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-lg text-xs font-semibold transition capitalize ${
               tab === t ? 'bg-primary-500 text-white' : 'text-gray-500'
@@ -94,7 +79,6 @@ export default function MyListingsPage() {
         {items.map(item => (
           <Link key={item.id} href={`/marketplace/${item.id}`}>
             <div className="card p-3 flex items-center gap-3 hover:shadow-md transition">
-              {/* Thumbnail */}
               <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 relative">
                 {item.thumbnailUrl
                   ? <img src={item.thumbnailUrl} className="w-full h-full object-cover" alt={item.title}/>
@@ -106,8 +90,6 @@ export default function MyListingsPage() {
                   </div>
                 )}
               </div>
-
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm text-gray-900 truncate">{item.title}</p>
                 <div className="flex items-center gap-2 mt-0.5">
