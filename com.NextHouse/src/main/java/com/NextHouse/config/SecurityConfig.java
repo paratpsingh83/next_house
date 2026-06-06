@@ -109,7 +109,7 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .contentTypeOptions(contentType -> {
                         }) // X-Content-Type-Options: nosniff
-                        .frameOptions(frame -> frame.deny())   // X-Frame-Options: DENY
+                        .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .includeSubDomains(true)
                                 .maxAgeInSeconds(31_536_000))       // 1 year HSTS

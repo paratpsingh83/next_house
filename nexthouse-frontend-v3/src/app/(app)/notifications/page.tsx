@@ -2,7 +2,7 @@
 // src/app/(app)/notifications/page.tsx
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { Bell, Loader2, CheckCheck, Heart, MessageCircle, Users, Zap, UserPlus, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { Bell, Loader2, CheckCheck, Heart, MessageCircle, Users, Zap, UserPlus, AlertTriangle, ShoppingBag, Star, Package, type LucideIcon } from 'lucide-react';
 import { notificationsApi } from '@/api';
 import { useAppDispatch } from '@/store';
 import { markAllRead, markOneRead, setUnread } from '@/store/slices/notifSlice';
@@ -28,9 +28,14 @@ const NOTIF_CONFIG: Record<string, {
   ACTIVITY_REJECTED:       { icon: Zap,           bg: 'bg-red-100',     color: 'text-red-400',     getUrl: n => n.referenceId ? `/activities/${n.referenceId}` : null },
   COMMUNITY_JOIN_REQUEST:  { icon: Users,         bg: 'bg-purple-100',  color: 'text-purple-600',  getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
   COMMUNITY_APPROVED:      { icon: Users,         bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/communities/${n.referenceId}` : null },
-  SAFETY_ALERT:            { icon: AlertTriangle, bg: 'bg-red-100',     color: 'text-red-600',     getUrl: _ => `/safety` },
-  MESSAGE:                 { icon: MessageCircle, bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/chat/${n.referenceId}` : null },
-  SYSTEM:                  { icon: Bell,          bg: 'bg-gray-100',    color: 'text-gray-500',    getUrl: n => n.redirectUrl ?? null },
+  SAFETY_ALERT:             { icon: AlertTriangle, bg: 'bg-red-100',     color: 'text-red-600',     getUrl: _ => `/safety` },
+  MESSAGE:                  { icon: MessageCircle, bg: 'bg-blue-100',    color: 'text-blue-500',    getUrl: n => n.referenceId ? `/chat/${n.referenceId}` : null },
+  SYSTEM:                   { icon: Bell,          bg: 'bg-gray-100',    color: 'text-gray-500',    getUrl: n => n.redirectUrl ?? null },
+  FOLLOW_REQUEST:           { icon: UserPlus,      bg: 'bg-primary-100', color: 'text-primary-600', getUrl: n => n.referenceId ? `/profile/${n.referenceId}` : null },
+  FOLLOW_REQUEST_ACCEPTED:  { icon: Users,         bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/profile/${n.referenceId}` : null },
+  MARKETPLACE_INTEREST:     { icon: ShoppingBag,   bg: 'bg-green-100',   color: 'text-green-600',   getUrl: n => n.referenceId ? `/marketplace/${n.referenceId}` : null },
+  BORROW_REQUEST_RESPONSE:  { icon: Package,       bg: 'bg-amber-100',   color: 'text-amber-600',   getUrl: n => n.referenceId ? `/borrow/${n.referenceId}` : null },
+  REACTION:                 { icon: Star,          bg: 'bg-yellow-100',  color: 'text-yellow-600',  getUrl: n => n.referenceId ? `/posts/${n.referenceId}` : null },
 };
 
 const DEFAULT_CONFIG: {

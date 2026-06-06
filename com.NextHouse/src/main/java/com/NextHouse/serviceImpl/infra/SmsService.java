@@ -29,17 +29,10 @@ import org.springframework.stereotype.Service;
 public class SmsService {
 
     public void sendOtp(String phoneNumber, String otp) {
-        // TODO: Replace with real Twilio/SNS call
-        // Message.creator(
-        //     new PhoneNumber(phoneNumber),
-        //     new PhoneNumber(fromNumber),
-        //     "Your NexHouse code: " + otp + ". Valid for 10 minutes.")
-        //     .create();
         log.info("[SMS] OTP stub → {} : {}", phoneNumber, otp);
     }
 
     public void sendMessage(String phoneNumber, String message) {
-        // TODO: Replace with real SMS call
         log.debug("[SMS] Message stub → {} : {}", phoneNumber, message);
     }
 }

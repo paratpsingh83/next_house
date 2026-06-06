@@ -34,5 +34,4 @@ public class Follow extends BaseEntity {
     @JoinColumn(name = "following_id", nullable = false,
             foreignKey = @ForeignKey(name = "fk_follow_following"))
     private User following;
-    // NOTE: Add DB-level CHECK: follower_id <> following_id in Flyway migration.
 }

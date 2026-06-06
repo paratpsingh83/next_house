@@ -106,8 +106,14 @@ export default function MarketplacePage() {
             <Loader2 className="animate-spin text-primary-500" size={28}/>
           </div>
         )}
+        {active.isError && !active.isLoading && (
+          <div className="card p-6 text-center col-span-2 mb-4">
+            <p className="text-sm font-semibold text-red-500 mb-2">Failed to load listings</p>
+            <button onClick={() => active.refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+          </div>
+        )}
 
-        {!active.isLoading && items.length === 0 && (
+        {!active.isLoading && !active.isError && items.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <ShoppingBag size={40} className="mx-auto mb-3 opacity-30"/>
             <p className="font-medium">{tab==='mine'?'You have no listings yet':'No items nearby'}</p>

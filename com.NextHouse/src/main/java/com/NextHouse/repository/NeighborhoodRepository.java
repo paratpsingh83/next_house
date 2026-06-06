@@ -38,16 +38,6 @@ public interface NeighborhoodRepository extends JpaRepository<Neighborhood, Long
             @Param("longitude") double longitude
     );
 
-    /**
-     * FIX: Added single-result method used by PostServiceImpl Tier 2 fallback.
-     *
-     * When a user's GPS doesn't fall inside any neighborhood polygon,
-     * we fall back to the nearest neighborhood by center distance.
-     * This ensures getNearbyFeed always returns results instead of throwing 404.
-     *
-     * Different from findNearestNeighborhoods (plural) — returns Optional<Neighborhood>
-     * so PostServiceImpl can use .orElse(null) cleanly.
-     */
     @Query(value = """
             SELECT * FROM neighborhoods
             WHERE is_deleted = false

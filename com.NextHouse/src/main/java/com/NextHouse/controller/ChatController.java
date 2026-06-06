@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,7 +24,8 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Chat", description = "Direct and group messaging, inbox, real-time chat (REST layer — use WebSocket for live delivery)")
 public class ChatController {
 
-    private final ChatService chatService;
+    private final ChatService            chatService;
+    private final SimpMessagingTemplate  messagingTemplate;
 
     // ─── Inbox ────────────────────────────────────────────────────────────────
 
@@ -168,13 +170,26 @@ public class ChatController {
 
     @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Delete a message", description = "Soft-deletes the message. Shows 'This message was deleted' in the UI.")
+    @Operation(summary = "Delete a message for me", description = "Removes the message from the current user's view only. Other participants still see it.")
     public ResponseEntity<ApiResponseDTO<Void>> deleteMessage(
             @PathVariable Long roomId,
             @PathVariable Long messageId,
             @CurrentUser Long currentUserId) {
         chatService.deleteMessage(messageId, currentUserId);
         return ResponseEntity.ok(ApiResponseDTO.success("Message deleted"));
+    }
+
+    @PostMapping("/rooms/{roomId}/messages/{messageId}/unsend")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Unsend a message", description = "Only allowed within 1 minute of sending. Sender sees 'You unsent a message'; receiver sees nothing.")
+    public ResponseEntity<ApiResponseDTO<ChatMessageResponseDTO>> unsendMessage(
+            @PathVariable Long roomId,
+            @PathVariable Long messageId,
+            @CurrentUser Long currentUserId) {
+        ChatMessageResponseDTO updated = chatService.unsendMessage(roomId, messageId, currentUserId);
+        // Broadcast updated state to all room subscribers so both sides update in real-time
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/messages", updated);
+        return ResponseEntity.ok(ApiResponseDTO.success("Message unsent", updated));
     }
 
     @PostMapping("/rooms/{roomId}/read")

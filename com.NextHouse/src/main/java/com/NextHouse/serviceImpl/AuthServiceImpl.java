@@ -49,13 +49,12 @@ public class AuthServiceImpl implements AuthService {
     private final DeviceTokenRepository      deviceTokenRepository;
     private final NeighborhoodRepository     neighborhoodRepository;
     private final UserNeighborhoodRepository userNeighborhoodRepository;
-    // FIX 2: Added missing UserPresenceRepository — needed by createPresenceRecord()
     private final UserPresenceRepository     userPresenceRepository;
 
     private final UserMapper              userMapper;
     private final GeoUtils               geoUtils;
     private final PasswordEncoder        passwordEncoder;
-    private final JwtTokenProvider       jwtTokenProvider;  // FIX 1: correct type after import fix
+    private final JwtTokenProvider       jwtTokenProvider;
     private final AuthenticationManager  authenticationManager;
     private final KafkaEventPublisher    eventPublisher;
 
@@ -94,7 +93,6 @@ public class AuthServiceImpl implements AuthService {
         if (dto.getDeviceToken() != null)
             registerDeviceToken(saved, dto.getDeviceToken(), dto.getDeviceType());
 
-        // FIX 2: createPresenceRecord now actually saves the record
         createPresenceRecord(saved);
 
         eventPublisher.publishUserRegistered(
@@ -284,19 +282,14 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponseDTO oauth2Login(OAuth2LoginRequestDTO dto) {
         OAuth2UserInfo info = oauth2VerifierService.verify(dto.getProvider(), dto.getIdToken());
 
-        // FIX 3: OAuth2UserInfo is a Java record.
-        // Records use component accessor methods, NOT getters:
-        //   info.email()      NOT info.getEmail()       ← was wrong
-        //   info.name()       NOT info.getName()        ← was wrong
-        //   info.pictureUrl() NOT info.getPictureUrl()  ← was wrong
         User user = userRepository.findByEmail(info.email()).orElse(null);
 
         if (user == null) {
             user = User.builder()
-                    .name(info.name())                          // FIX: .name() not .getName()
+                    .name(info.name())
                     .username(generateUniqueUsername(info.name()))
-                    .email(info.email())                        // FIX: .email() not .getEmail()
-                    .profileImage(info.pictureUrl())            // FIX: .pictureUrl() not .getPictureUrl()
+                    .email(info.email())
+                    .profileImage(info.pictureUrl())
                     .role("USER").accountStatus("ACTIVE")
                     .verificationStatus("EMAIL_VERIFIED")
                     .trustScore(10).addressVerified(false)
@@ -323,7 +316,6 @@ public class AuthServiceImpl implements AuthService {
         User user = findUserOrThrow(currentUserId);
         if (user.getTwoFactorEnabled())
             throw new ConflictException("2FA is already enabled");
-        // FIX: Null-check before accessing phoneNumber — OAuth2 users have no phone
         if (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank())
             throw new BadRequestException("A verified phone number is required to enable 2FA");
         user.setTwoFactorEnabled(true);
@@ -409,24 +401,10 @@ public class AuthServiceImpl implements AuthService {
                     .lastUsedAt(LocalDateTime.now()).build()));
     }
 
-    /**
-     * FIX 2: Was building UserPresence but NEVER calling .save().
-     * The original code:
-     *   UserPresence presence = UserPresence.builder()...build();
-     *   // Save via UserPresenceRepository — injected or accessed via service layer
-     *   (NOTHING CALLED — presence was silently discarded)
-     *
-     * Without this save, presence records are never created for new users.
-     * This causes:
-     *   - NPE in UserPresenceServiceImpl.markOnline() (no record to update)
-     *   - NotificationServiceImpl FCM path always sees user as offline
-     *   - UserServiceImpl.buildUserResponse() finds no presence (online=null)
-     */
     private void createPresenceRecord(User user) {
         if (userPresenceRepository.findByUserId(user.getId()).isEmpty()) {
-            UserPresence presence = UserPresence.builder()
-                    .user(user).online(false).lastSeen(LocalDateTime.now()).build();
-            userPresenceRepository.save(presence);  // ← FIX: this line was completely missing
+            userPresenceRepository.save(UserPresence.builder()
+                    .user(user).online(false).lastSeen(LocalDateTime.now()).build());
         }
     }
 

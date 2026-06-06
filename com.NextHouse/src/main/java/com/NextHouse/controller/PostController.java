@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class PostController {
 
     private final PostService   postService;
-    private final ReportService reportService;   // FIX: inject ReportService for report endpoint
+    private final ReportService reportService;
 
     // ─── CRUD ─────────────────────────────────────────────────────────────────
 
@@ -64,19 +64,8 @@ public class PostController {
         return ResponseEntity.ok(ApiResponseDTO.success("Post deleted"));
     }
 
-    // ─── FIX: Report endpoint ─────────────────────────────────────────────────
-    /**
-     * FIX: This endpoint was missing from the original PostController.
-     *
-     * Frontend calls POST /api/v1/posts/{postId}/report with { reason }
-     * but the endpoint did not exist, causing 404 errors when users tried
-     * to report posts from the PostCard "More" menu.
-     *
-     * The ReportService already exists and handles:
-     * - Duplicate report prevention
-     * - Auto-escalation to moderation queue after 3 reports
-     * - Admin review workflow
-     */
+    // ─── Report ───────────────────────────────────────────────────────────────
+
     @PostMapping("/{postId}/report")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Report a post", description = "Reports a post for review. Duplicate reports from the same user are rejected.")

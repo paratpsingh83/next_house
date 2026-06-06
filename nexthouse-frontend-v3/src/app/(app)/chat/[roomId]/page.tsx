@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import { ArrowLeft, Send, Loader2, Trash2, Reply, Users, Phone } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Trash2, Reply, Users, Undo2 } from 'lucide-react';
 import { chatApi } from '@/api';
 import { wsClient } from '@/lib/ws';
 import { useAppDispatch, useAppSelector } from '@/store';
@@ -11,12 +11,17 @@ import { appendMessage, setTyping } from '@/store/slices/chatSlice';
 import { format, isToday, isYesterday } from 'date-fns';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import type { ChatMessageResponse, PageResponse } from '@/types';
 
 function formatMsgTime(dateStr: string) {
   const d = new Date(dateStr);
   if (isToday(d))     return format(d, 'h:mm a');
   if (isYesterday(d)) return `Yesterday ${format(d, 'h:mm a')}`;
   return format(d, 'MMM d, h:mm a');
+}
+
+function canUnsend(createdAt: string) {
+  return Date.now() - new Date(createdAt).getTime() < 60_000;
 }
 
 export default function ChatRoomPage() {
@@ -27,28 +32,29 @@ export default function ChatRoomPage() {
   const me         = useAppSelector(s => s.auth.user);
   const typingUsers = useAppSelector(s => s.chat.typing[Number(roomId)] ?? []);
 
-  const [text,     setText]     = useState('');
-  const [sending,  setSending]  = useState(false);
-  const [replyTo,  setReplyTo]  = useState<{id:number;preview:string}|null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const typingTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const [text,    setText]    = useState('');
+  const [sending, setSending] = useState(false);
+  const [replyTo, setReplyTo] = useState<{id:number;preview:string}|null>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
+  const lastMsgIdRef = useRef<number | null>(null);
+  const typingTimer  = useRef<ReturnType<typeof setTimeout>|null>(null);
   const rId = Number(roomId);
 
-  // ── Room details ──────────────────────────────────────────────────────────
+  // ── Room details ────────────────────────────────────────────────────────────
   const { data: room } = useQuery({
-    queryKey: ['chat','room', rId],
+    queryKey: ['chat', 'room', rId],
     queryFn:  () => chatApi.getRoomDetails(rId),
   });
 
-  // ── Message history ───────────────────────────────────────────────────────
+  // ── Message history ─────────────────────────────────────────────────────────
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['chat','history', rId],
+    queryKey: ['chat', 'history', rId],
     queryFn:  ({ pageParam = 0 }) => chatApi.getHistory(rId, pageParam, 30),
     getNextPageParam: l => l.hasNext ? l.page + 1 : undefined,
     initialPageParam: 0,
   });
 
-  // Pages come in newest-first; flatten + reverse for display
+  // Pages come newest-first; reverse for bottom-up display
   const messages = data?.pages.flatMap(p => p.content).reverse() ?? [];
 
   const { ref: topRef, inView: topInView } = useInView({ threshold: 0.1 });
@@ -56,34 +62,59 @@ export default function ChatRoomPage() {
     if (topInView && hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [topInView, hasNextPage, isFetchingNextPage]);
 
-  // ── WebSocket subscriptions ───────────────────────────────────────────────
+  // ── WebSocket subscriptions ──────────────────────────────────────────────────
   useEffect(() => {
-    let unsubMsg   = () => {};
+    let unsubMsg    = () => {};
     let unsubTyping = () => {};
 
-    // onceConnected handles the race where WS is still connecting at mount time
-    // (e.g. page refresh directly to a chat URL). Also re-runs on WS reconnect.
     const cancelDeferred = wsClient.onceConnected(() => {
       unsubMsg = wsClient.onRoomMessage(rId, msg => {
+        // Update existing message (e.g. unsend broadcast) OR append new one
+        qc.setQueryData<InfiniteData<PageResponse<ChatMessageResponse>>>(
+          ['chat', 'history', rId],
+          old => {
+            if (!old || !old.pages.length) return old;
+            let found = false;
+            const pages = old.pages.map(page => ({
+              ...page,
+              content: page.content.map(m => {
+                if (m.id === msg.id) { found = true; return msg; }
+                return m;
+              }),
+            }));
+            if (!found) {
+              // New message — prepend to first page so it ends up at bottom after reverse
+              pages[0] = { ...pages[0], content: [msg, ...pages[0].content] };
+            }
+            return { ...old, pages };
+          }
+        );
         dispatch(appendMessage({ roomId: rId, message: msg }));
         wsClient.markRead(rId);
       });
+
       unsubTyping = wsClient.onTyping(rId, ({ userId, typing }) => {
         dispatch(setTyping({ roomId: rId, userId, typing }));
       });
     });
 
     chatApi.markRead(rId).catch(() => {});
-
     return () => { cancelDeferred(); unsubMsg(); unsubTyping(); };
   }, [rId]);
 
-  // ── Auto scroll to bottom ─────────────────────────────────────────────────
+  // ── Auto scroll to bottom (only on new incoming messages, not history loads) ─
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    const latestId = messages[messages.length - 1]?.id ?? null;
+    if (latestId !== null && latestId !== lastMsgIdRef.current) {
+      lastMsgIdRef.current = latestId;
+      // Only smooth-scroll if it's a genuinely new message, not paginating old history
+      if (!isFetchingNextPage) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [messages]);
 
-  // ── Typing indicator ──────────────────────────────────────────────────────
+  // ── Typing indicator ────────────────────────────────────────────────────────
   const handleTextChange = (v: string) => {
     setText(v);
     wsClient.sendTyping(rId, true);
@@ -91,24 +122,16 @@ export default function ChatRoomPage() {
     typingTimer.current = setTimeout(() => wsClient.sendTyping(rId, false), 2000);
   };
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // ── Send ────────────────────────────────────────────────────────────────────
   const send = useCallback(async () => {
     if (!text.trim()) return;
-    if (!wsClient.isConnected()) {
-      toast.error('Not connected. Please wait…');
-      return;
-    }
+    if (!wsClient.isConnected()) { toast.error('Not connected. Please wait…'); return; }
     const msg = text;
     setText('');
     setReplyTo(null);
     wsClient.sendTyping(rId, false);
     try {
-      // Send via WebSocket — the server broadcasts back to all subscribers including us
-      wsClient.sendMessage(rId, {
-        message:          msg,
-        messageType:      'TEXT',
-        replyToMessageId: replyTo?.id,
-      });
+      wsClient.sendMessage(rId, { message: msg, messageType: 'TEXT', replyToMessageId: replyTo?.id });
     } catch {
       setText(msg);
       toast.error('Failed to send');
@@ -119,24 +142,55 @@ export default function ChatRoomPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  // ── Delete message ────────────────────────────────────────────────────────
-  const deleteMessage = async (messageId: number) => {
+  // ── Delete for me ───────────────────────────────────────────────────────────
+  const deleteForMe = async (messageId: number) => {
     try {
       await chatApi.deleteMessage(rId, messageId);
-      qc.invalidateQueries({ queryKey: ['chat','history', rId] });
-      toast('Message deleted');
-    } catch { toast.error('Failed'); }
+      qc.setQueryData<InfiniteData<PageResponse<ChatMessageResponse>>>(
+        ['chat', 'history', rId],
+        old => !old ? old : {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            content: page.content.filter(m => m.id !== messageId),
+          })),
+        }
+      );
+      toast('Deleted for you');
+    } catch { toast.error('Failed to delete'); }
   };
 
-  // ── Typing display ────────────────────────────────────────────────────────
+  // ── Unsend (within 1 minute) ────────────────────────────────────────────────
+  const unsend = async (messageId: number) => {
+    try {
+      await chatApi.unsendMessage(rId, messageId);
+      // Backend broadcasts the updated message via WS; also update locally now
+      qc.setQueryData<InfiniteData<PageResponse<ChatMessageResponse>>>(
+        ['chat', 'history', rId],
+        old => !old ? old : {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            content: page.content.map(m =>
+              m.id === messageId ? { ...m, isUnsent: true, message: undefined } : m
+            ),
+          })),
+        }
+      );
+      toast('Message unsent');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Cannot unsend');
+    }
+  };
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
   const typingNames = typingUsers
     .filter(uid => uid !== me?.id)
     .map(uid => room?.members?.find(m => m.id === uid)?.name ?? 'Someone');
 
-  const isGroup     = room?.roomType === 'GROUP' || room?.roomType === 'COMMUNITY';
-  const otherMember = !isGroup ? room?.members?.find(m => m.id !== me?.id) : undefined;
+  const isGroup      = room?.roomType === 'GROUP' || room?.roomType === 'COMMUNITY';
+  const otherMember  = !isGroup ? room?.members?.find(m => m.id !== me?.id) : undefined;
 
-  // ── Group messages by date ────────────────────────────────────────────────
   const getDateLabel = (dateStr: string) => {
     const d = new Date(dateStr);
     if (isToday(d))     return 'Today';
@@ -147,7 +201,7 @@ export default function ChatRoomPage() {
   return (
     <div className="flex flex-col h-screen bg-white max-w-md mx-auto">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0 shadow-sm">
         <button onClick={() => router.back()} className="p-1.5 rounded-xl text-gray-500 hover:bg-gray-100 flex-shrink-0">
           <ArrowLeft size={20}/>
@@ -159,7 +213,6 @@ export default function ChatRoomPage() {
               ? <img src={room.avatarUrl} className="w-full h-full object-cover" alt=""/>
               : <span className="text-primary-600 font-bold text-sm">{(room?.title ?? '?')[0].toUpperCase()}</span>
             }
-            {/* Online indicator for DM */}
             {otherMember?.online && (
               <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white"/>
             )}
@@ -182,23 +235,23 @@ export default function ChatRoomPage() {
         )}
       </div>
 
-      {/* ── Messages ───────────────────────────────────────────────────────── */}
+      {/* ── Messages ────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 scrollbar-hide">
-
-        {/* Load more trigger */}
         <div ref={topRef} className="h-1"/>
         {isFetchingNextPage && <div className="flex justify-center py-2"><Loader2 className="animate-spin text-primary-400" size={18}/></div>}
         {isLoading && <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary-500" size={28}/></div>}
 
         {messages.map((msg, idx) => {
-          const isMine   = msg.sender.id === me?.id;
-          const prevMsg  = messages[idx - 1];
-          const showDate = !prevMsg || getDateLabel(prevMsg.createdAt) !== getDateLabel(msg.createdAt);
+          const isMine    = msg.sender.id === me?.id;
+          const prevMsg   = messages[idx - 1];
+          const showDate  = !prevMsg || getDateLabel(prevMsg.createdAt) !== getDateLabel(msg.createdAt);
           const showAvatar = !isMine && (!prevMsg || prevMsg.sender.id !== msg.sender.id);
+
+          // Receiver never sees unsent messages
+          if (msg.isUnsent && !isMine) return null;
 
           return (
             <div key={msg.id}>
-              {/* Date separator */}
               {showDate && (
                 <div className="flex items-center gap-2 my-4">
                   <div className="flex-1 h-px bg-gray-100"/>
@@ -219,13 +272,12 @@ export default function ChatRoomPage() {
                 )}
 
                 <div className={`max-w-[75%] flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
-                  {/* Sender name (group only) */}
                   {isGroup && !isMine && showAvatar && (
                     <span className="text-xs text-gray-400 mb-1 ml-1">{msg.sender.name}</span>
                   )}
 
                   {/* Reply preview */}
-                  {msg.replyToPreview && (
+                  {msg.replyToPreview && !msg.isUnsent && (
                     <div className={`text-xs px-3 py-1.5 rounded-lg mb-0.5 max-w-full truncate ${isMine ? 'bg-primary-400/30 text-white' : 'bg-gray-200 text-gray-600'}`}>
                       ↩ {msg.replyToPreview}
                     </div>
@@ -234,42 +286,57 @@ export default function ChatRoomPage() {
                   {/* Message bubble */}
                   <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                     isMine
-                      ? 'bg-primary-500 text-white rounded-br-sm'
+                      ? msg.isUnsent
+                        ? 'bg-gray-100 text-gray-400 rounded-br-sm'
+                        : 'bg-primary-500 text-white rounded-br-sm'
                       : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                   }`}>
-                    {msg.isDeleted
-                      ? <span className="italic opacity-50 text-xs">Message deleted</span>
-                      : msg.message
+                    {msg.isUnsent
+                      ? <span className="italic text-xs">You unsent a message</span>
+                      : msg.isDeleted
+                        ? <span className="italic opacity-50 text-xs">Message deleted</span>
+                        : msg.message
                     }
                   </div>
 
-                  {/* Time + actions */}
+                  {/* Time + action buttons */}
                   <div className={`flex items-center gap-2 mt-0.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                     <span className="text-[10px] text-gray-400">{formatMsgTime(msg.createdAt)}</span>
 
-                    {/* Action buttons (appear on hover) */}
-                    {!msg.isDeleted && (
+                    {!msg.isDeleted && !msg.isUnsent && (
                       <div className="hidden group-hover:flex items-center gap-1">
+                        {/* Reply — shown for all messages */}
                         <button
                           onClick={() => setReplyTo({ id: msg.id, preview: (msg.message ?? '').slice(0, 50) })}
                           className="p-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200"
                         >
                           <Reply size={12}/>
                         </button>
-                        {isMine && (
+
+                        {/* Unsend — only mine, only within 1 minute */}
+                        {isMine && canUnsend(msg.createdAt) && (
                           <button
-                            onClick={() => deleteMessage(msg.id)}
-                            className="p-1 rounded-lg bg-gray-100 text-red-400 hover:bg-red-50"
+                            onClick={() => unsend(msg.id)}
+                            className="p-1 rounded-lg bg-gray-100 text-orange-400 hover:bg-orange-50"
+                            title="Unsend (removes for everyone)"
                           >
-                            <Trash2 size={12}/>
+                            <Undo2 size={12}/>
                           </button>
                         )}
+
+                        {/* Delete for me — shown for all messages */}
+                        <button
+                          onClick={() => deleteForMe(msg.id)}
+                          className="p-1 rounded-lg bg-gray-100 text-red-400 hover:bg-red-50"
+                          title="Delete for me"
+                        >
+                          <Trash2 size={12}/>
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Spacer for my messages (no avatar) */}
                 {isMine && <div className="w-7 flex-shrink-0"/>}
               </div>
             </div>
@@ -293,7 +360,7 @@ export default function ChatRoomPage() {
         <div ref={bottomRef}/>
       </div>
 
-      {/* ── Reply preview ───────────────────────────────────────────────────── */}
+      {/* ── Reply preview ────────────────────────────────────────────────────── */}
       {replyTo && (
         <div className="px-4 py-2 bg-primary-50 border-t border-primary-100 flex items-center gap-2 flex-shrink-0">
           <Reply size={14} className="text-primary-500 flex-shrink-0"/>
@@ -302,7 +369,7 @@ export default function ChatRoomPage() {
         </div>
       )}
 
-      {/* ── Input ──────────────────────────────────────────────────────────── */}
+      {/* ── Input ────────────────────────────────────────────────────────────── */}
       <div className="px-4 py-3 border-t border-gray-100 bg-white flex-shrink-0 safe-pb">
         <div className="flex items-end gap-2">
           <textarea

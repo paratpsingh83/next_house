@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, User, Lock, Bell, Shield, ChevronRight, Edit3, Star } from 'lucide-react';
+import { LogOut, Lock, Bell, Shield, ChevronRight, Edit3, Star, Bookmark, BadgeCheck } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { clearAuth } from '@/store/slices/authSlice';
 import { authApi } from '@/api';
@@ -25,12 +25,16 @@ export default function SettingsPage() {
 
   const sections = [
     { title: 'Account', items: [
-      { icon: Edit3,  label: 'Edit profile',    sub: 'Name, bio, photo, location', href: '/settings/profile' },
-      { icon: Lock,   label: 'Change password', sub: 'Update your password',        href: '/settings/password' },
+      { icon: Edit3,     label: 'Edit profile',    sub: 'Name, bio, photo, location', href: '/settings/profile' },
+      { icon: Lock,      label: 'Change password', sub: 'Update your password',        href: '/settings/password' },
     ]},
     { title: 'Preferences', items: [
-      { icon: Bell,   label: 'Notifications',   sub: 'Push & email settings',       href: '/settings/notifications' },
-      { icon: Shield, label: 'Privacy',          sub: 'Who can see your profile',    href: '/settings/privacy' },
+      { icon: Bell,      label: 'Notifications',   sub: 'Push & email settings',       href: '/settings/notifications' },
+      { icon: Shield,    label: 'Privacy',          sub: 'Who can see your profile',    href: '/settings/privacy' },
+      { icon: BadgeCheck, label: 'Verification',   sub: 'Verify address & identity',   href: '/settings/verification' },
+    ]},
+    { title: 'Content', items: [
+      { icon: Bookmark,  label: 'Saved Posts',      sub: 'Posts you bookmarked',        href: '/my/saved' },
     ]},
   ];
 
@@ -90,7 +94,6 @@ export default function SettingsPage() {
 
         {/* Logout */}
         <div>
-          <p className="section-title">Account</p>
           <button onClick={logout} disabled={loading}
             className="w-full card flex items-center gap-3 px-4 py-3.5 text-red-500 hover:bg-red-50 transition">
             <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">

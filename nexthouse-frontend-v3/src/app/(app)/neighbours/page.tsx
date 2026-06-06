@@ -1,10 +1,9 @@
 'use client';
 // src/app/(app)/neighbours/page.tsx
-// Like Nextdoor's "Neighbours" tab — shows people near you
 import { useState, useEffect } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import { Loader2, UserPlus, UserCheck, MessageCircle, MapPin, Shield, Users } from 'lucide-react';
+import { Loader2, UserPlus, UserCheck, MessageCircle, MapPin, Shield, Users, Clock } from 'lucide-react';
 import { usersApi, chatApi } from '@/api';
 import { useAppSelector } from '@/store';
 import { useRouter } from 'next/navigation';
@@ -13,6 +12,8 @@ import toast from 'react-hot-toast';
 import type { NearbyUserResponse } from '@/types';
 
 type Tab = 'nearby' | 'suggestions';
+type FollowState = 'none' | 'following' | 'requested';
+
 const RADII = [{ v: 1000, l: '1 km' }, { v: 3000, l: '3 km' }, { v: 5000, l: '5 km' }, { v: 10000, l: '10 km' }];
 
 export default function NeighboursPage() {
@@ -22,18 +23,16 @@ export default function NeighboursPage() {
   const [tab,    setTab]    = useState<Tab>('nearby');
   const [radius, setRadius] = useState(5000);
   const [loc,    setLoc]    = useState({ lat: 3.139, lon: 101.6869 });
-  const [following, setFollowing] = useState<Record<number, boolean>>({});
+  const [followStates, setFollowStates] = useState<Record<number, FollowState>>({});
+  const [confirmUnfollowId, setConfirmUnfollowId] = useState<number | null>(null);
 
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      p => {
-        const lat = p.coords.latitude;
-        const lon = p.coords.longitude;
-        setLoc({ lat, lon });
-        // Save to backend so findNearbyUsers query can find this user
-        usersApi.updateLocation({ latitude: lat, longitude: lon }).catch(() => {});
-      }
-    );
+    navigator.geolocation?.getCurrentPosition(p => {
+      const lat = p.coords.latitude;
+      const lon = p.coords.longitude;
+      setLoc({ lat, lon });
+      usersApi.updateLocation({ latitude: lat, longitude: lon }).catch(() => {});
+    });
   }, []);
 
   const nearbyQ = useInfiniteQuery({
@@ -52,25 +51,56 @@ export default function NeighboursPage() {
     enabled: tab === 'suggestions',
   });
 
-  const active = tab === 'nearby' ? nearbyQ : suggestQ;
+  const active   = tab === 'nearby' ? nearbyQ : suggestQ;
   const rawItems = active.data?.pages.flatMap((p: any) => p.content) ?? [];
-  // nearby returns NearbyUserResponse { user, distance }, suggestions returns UserSummaryDTO
-  const items = rawItems.map((item: any) => item.user ?? item);
+  const items    = rawItems.map((item: any) => item.user ?? item);
 
   const { ref, inView } = useInView({ threshold: 0.1 });
   useEffect(() => {
     if (inView && active.hasNextPage && !active.isFetchingNextPage) active.fetchNextPage();
   }, [inView, active.hasNextPage, active.isFetchingNextPage]);
 
-  const handleFollow = async (userId: number) => {
-    const isFollowing = following[userId];
-    setFollowing(prev => ({ ...prev, [userId]: !isFollowing }));
+  function getFollowState(u: any): FollowState {
+    if (followStates[u.id] !== undefined) return followStates[u.id];
+    if (u.isFollowing)  return 'following';
+    if (u.isRequested)  return 'requested';
+    return 'none';
+  }
+
+  const handleFollowClick = async (u: any) => {
+    const state = getFollowState(u);
+    if (state === 'following') {
+      setConfirmUnfollowId(u.id);
+      return;
+    }
+    if (state === 'requested') {
+      toast('Follow request already sent', { icon: '⏳' });
+      return;
+    }
+    setFollowStates(prev => ({ ...prev, [u.id]: 'following' }));
     try {
-      if (isFollowing) await usersApi.unfollow(userId);
-      else { await usersApi.follow(userId); toast.success('Following!'); }
+      const status = await usersApi.follow(u.id);
+      setFollowStates(prev => ({
+        ...prev,
+        [u.id]: status === 'REQUESTED' ? 'requested' : 'following',
+      }));
+      if (status === 'REQUESTED') toast('Follow request sent', { icon: '⏳' });
+      else toast.success('Following!');
+    } catch (e: any) {
+      setFollowStates(prev => ({ ...prev, [u.id]: state }));
+      toast.error(e?.response?.data?.message ?? 'Failed');
+    }
+  };
+
+  const confirmUnfollow = async () => {
+    const id = confirmUnfollowId!;
+    setConfirmUnfollowId(null);
+    setFollowStates(prev => ({ ...prev, [id]: 'none' }));
+    try {
+      await usersApi.unfollow(id);
     } catch {
-      setFollowing(prev => ({ ...prev, [userId]: isFollowing }));
-      toast.error('Failed');
+      setFollowStates(prev => ({ ...prev, [id]: 'following' }));
+      toast.error('Failed to unfollow');
     }
   };
 
@@ -115,7 +145,14 @@ export default function NeighboursPage() {
           <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-500" size={28}/></div>
         )}
 
-        {!active.isLoading && items.length === 0 && (
+        {active.isError && !active.isLoading && (
+          <div className="card p-6 text-center">
+            <p className="text-sm font-semibold text-red-500 mb-2">Failed to load neighbours</p>
+            <button onClick={() => active.refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+          </div>
+        )}
+
+        {!active.isLoading && !active.isError && items.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <Users size={40} className="mx-auto mb-3 opacity-30"/>
             <p className="font-medium">{tab === 'nearby' ? 'No neighbours found nearby' : 'No suggestions yet'}</p>
@@ -124,8 +161,8 @@ export default function NeighboursPage() {
         )}
 
         {items.map((u: any) => {
-          const isFollowed = following[u.id] ?? u.isFollowing ?? false;
-          const isMe = u.id === me?.id;
+          const state = getFollowState(u);
+          const isMe  = u.id === me?.id;
           if (isMe) return null;
 
           return (
@@ -155,12 +192,15 @@ export default function NeighboursPage() {
                   className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-primary-50 hover:text-primary-600 transition">
                   <MessageCircle size={15}/>
                 </button>
-                <button onClick={() => handleFollow(u.id)}
+                <button onClick={() => handleFollowClick(u)}
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                    isFollowed ? 'bg-gray-100 text-gray-600' : 'bg-primary-500 text-white hover:bg-primary-600'
+                    state === 'following' ? 'bg-gray-100 text-gray-600'
+                    : state === 'requested' ? 'bg-gray-100 text-gray-500'
+                    : 'bg-primary-500 text-white hover:bg-primary-600'
                   }`}>
-                  {isFollowed ? <UserCheck size={13}/> : <UserPlus size={13}/>}
-                  {isFollowed ? 'Following' : 'Follow'}
+                  {state === 'following' ? <><UserCheck size={13}/> Following</>
+                   : state === 'requested' ? <><Clock size={13}/> Requested</>
+                   : <><UserPlus size={13}/> Follow</>}
                 </button>
               </div>
             </div>
@@ -170,6 +210,26 @@ export default function NeighboursPage() {
         <div ref={ref} className="h-4"/>
         {active.isFetchingNextPage && <div className="flex justify-center py-4"><Loader2 className="animate-spin text-primary-400" size={22}/></div>}
       </div>
+
+      {/* Unfollow confirmation modal */}
+      {confirmUnfollowId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-base font-bold text-gray-900 mb-2">Unfollow?</h3>
+            <p className="text-sm text-gray-500 mb-5">Do you want to unfollow this person?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmUnfollowId(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">
+                Cancel
+              </button>
+              <button onClick={confirmUnfollow}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition">
+                Unfollow
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

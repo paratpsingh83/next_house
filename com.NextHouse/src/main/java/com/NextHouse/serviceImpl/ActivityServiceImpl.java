@@ -15,7 +15,7 @@ import com.NextHouse.repository.*;
 import com.NextHouse.service.ActivityService;
 import com.NextHouse.service.NotificationService;
 import com.NextHouse.util.geo.GeoUtils;
-import lombok.RequiredArgsConstructor; // FIX: @Builder REMOVED (see below)
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,35 +24,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
-/**
- * FIX 1: @Builder annotation REMOVED from this class.
- *
- * @Builder on a @Service class causes two problems:
- *
- * Problem A — Constructor conflict:
- *   @Builder generates an ALL-ARGS constructor.
- *   @RequiredArgsConstructor generates a constructor for FINAL fields.
- *   Both try to generate constructors — Lombok can only generate one,
- *   so it produces an ambiguous/broken constructor that Spring cannot use
- *   for @Autowired dependency injection.
- *
- * Problem B — @Builder is meaningless on a Spring service class:
- *   @Builder is for creating VALUE OBJECTS via the builder pattern.
- *   Spring services are singletons created by the Spring container.
- *   You never write "ActivityServiceImpl.builder().build()" — Spring
- *   creates the bean via its constructor automatically.
- *
- * FIX: Remove @Builder. Keep only @RequiredArgsConstructor.
- *
- * FIX 2: dto.getActivityType().toString() would have caused NPE/ClassCastException
- *   if activityType was String (old DTO). After DTO fix (activityType is ActivityType enum),
- *   dto.getActivityType() returns an ActivityType enum which has .toString() returning its name.
- *   No code change needed here — the DTO fix resolves this.
- */
 @Slf4j
 @Service
-// FIX: @Builder REMOVED — conflicts with @RequiredArgsConstructor, meaningless on @Service
 @RequiredArgsConstructor
 public class ActivityServiceImpl implements ActivityService {
 
@@ -61,6 +40,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final UserRepository           userRepository;
     private final CommunityRepository      communityRepository;
     private final NeighborhoodRepository   neighborhoodRepository;
+    private final BlockedUserRepository    blockedUserRepository;
 
     private final ActivityMapper      activityMapper;
     private final GeoUtils            geoUtils;
@@ -98,8 +78,6 @@ public class ActivityServiceImpl implements ActivityService {
                 .occurredAt(LocalDateTime.now())
                 .actorId(currentUserId).activityId(saved.getId()).hostId(currentUserId)
                 .neighborhoodId(dto.getNeighborhoodId()).communityId(dto.getCommunityId())
-                // FIX 2: dto.getActivityType() now returns ActivityType enum (after DTO fix)
-                // .toString() on an enum returns its name (e.g. "SOCIAL") — correct
                 .activityType(dto.getActivityType().toString())
                 .latitude(dto.getLatitude()).longitude(dto.getLongitude())
                 .build());
@@ -137,34 +115,35 @@ public class ActivityServiceImpl implements ActivityService {
     @Transactional(readOnly = true)
     public PageResponseDTO<ActivityResponseDTO> getNearbyActivities(
             Long currentUserId, NearbySearchRequestDTO geoDto, String activityType, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        List<Long> blockedIds = getBlockedIds(currentUserId);
         Page<Activity> activities = activityRepository.findNearbyActivities(
-            geoDto.getLatitude(), geoDto.getLongitude(), geoDto.getRadiusMeters(), activityType, pageable);
-        return PageResponseDTO.of(activities.map(a -> enrichActivityResponse(activityMapper.toResponse(a), currentUserId)));
+            geoDto.getLatitude(), geoDto.getLongitude(), geoDto.getRadiusMeters(),
+            activityType, blockedIds, PageRequest.of(page, size));
+        return enrichPage(activities, currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<ActivityResponseDTO> getCommunityActivities(Long communityId, int page, int size) {
-        return PageResponseDTO.of(
-            activityRepository.findByCommunityId(communityId, LocalDateTime.now(), PageRequest.of(page, size))
-                .map(a -> enrichActivityResponse(activityMapper.toResponse(a), null)));
+        return enrichPage(
+            activityRepository.findByCommunityId(communityId, LocalDateTime.now(), PageRequest.of(page, size)),
+            null);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<ActivityResponseDTO> getMyHostedActivities(Long currentUserId, int page, int size) {
-        return PageResponseDTO.of(
-            activityRepository.findByHostUserIdAndIsDeletedFalse(currentUserId, PageRequest.of(page, size))
-                .map(a -> enrichActivityResponse(activityMapper.toResponse(a), currentUserId)));
+        return enrichPage(
+            activityRepository.findByHostUserIdAndIsDeletedFalse(currentUserId, PageRequest.of(page, size)),
+            currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<ActivityResponseDTO> getMyJoinedActivities(Long currentUserId, int page, int size) {
-        return PageResponseDTO.of(
-            activityRepository.findJoinedActivities(currentUserId, PageRequest.of(page, size))
-                .map(a -> enrichActivityResponse(activityMapper.toResponse(a), currentUserId)));
+        return enrichPage(
+            activityRepository.findJoinedActivities(currentUserId, PageRequest.of(page, size)),
+            currentUserId);
     }
 
     @Override
@@ -203,8 +182,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .orElseThrow(() -> new NotFoundException("Membership not found"));
         if (member.getRole() == ActivityMemberRole.HOST)
             throw new ConflictException("Host cannot leave. Delete the activity instead.");
-        member.setIsDeleted(true);
-        memberRepository.save(member);
+        memberRepository.delete(member);
     }
 
     @Override
@@ -235,7 +213,7 @@ public class ActivityServiceImpl implements ActivityService {
         assertHost(activity, currentUserId);
         ActivityMember member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new NotFoundException("Member request not found"));
-        memberRepository.updateJoinStatus(memberId, JoinStatus.REJECTED);
+        memberRepository.delete(member);
         notificationService.notifyActivityApproval(member.getUser().getId(), activityId, false);
     }
 
@@ -247,6 +225,53 @@ public class ActivityServiceImpl implements ActivityService {
         return PageResponseDTO.of(
             memberRepository.findByActivityIdAndJoinStatus(activityId, status, PageRequest.of(page, size))
                             .map(activityMapper::toMemberResponse));
+    }
+
+    private PageResponseDTO<ActivityResponseDTO> enrichPage(Page<Activity> page, Long currentUserId) {
+        if (page.isEmpty()) return PageResponseDTO.of(page.map(a -> enrichActivityResponse(activityMapper.toResponse(a), currentUserId)));
+
+        List<Long> ids = page.getContent().stream().map(Activity::getId).collect(Collectors.toList());
+
+        Map<Long, Integer> countMap = new HashMap<>();
+        activityRepository.countApprovedMembersForActivities(ids)
+                .forEach(row -> countMap.put((Long) row[0], ((Number) row[1]).intValue()));
+
+        Map<Long, ActivityMember> membershipMap = new HashMap<>();
+        if (currentUserId != null) {
+            memberRepository.findByActivityIdsAndUserId(ids, currentUserId)
+                    .forEach(am -> membershipMap.put(am.getActivity().getId(), am));
+        }
+
+        return PageResponseDTO.of(page.map(a -> {
+            ActivityResponseDTO dto = activityMapper.toResponse(a);
+            int memberCount = countMap.getOrDefault(a.getId(), 0);
+            String myJoinStatus = "NONE";
+            boolean isHost = false;
+            ActivityMember am = membershipMap.get(a.getId());
+            if (am != null) {
+                myJoinStatus = am.getJoinStatus().name();
+                isHost = am.getRole() == ActivityMemberRole.HOST;
+            }
+            return ActivityResponseDTO.builder()
+                    .id(dto.getId()).title(dto.getTitle()).description(dto.getDescription())
+                    .activityType(dto.getActivityType()).status(dto.getStatus())
+                    .activityTime(dto.getActivityTime()).endTime(dto.getEndTime())
+                    .maxMembers(dto.getMaxMembers()).currentMemberCount(memberCount)
+                    .privateActivity(dto.getPrivateActivity()).approvalRequired(dto.getApprovalRequired())
+                    .coverImage(dto.getCoverImage()).latitude(dto.getLatitude())
+                    .longitude(dto.getLongitude()).address(dto.getAddress())
+                    .hostUser(dto.getHostUser()).community(dto.getCommunity())
+                    .neighborhood(dto.getNeighborhood()).myJoinStatus(myJoinStatus)
+                    .isHost(isHost).createdAt(dto.getCreatedAt()).build();
+        }));
+    }
+
+    private List<Long> getBlockedIds(Long userId) {
+        if (userId == null) return List.of(-1L);
+        List<Long> blocked = new ArrayList<>(blockedUserRepository.findBlockedUserIds(userId));
+        blocked.addAll(blockedUserRepository.findUsersWhoBlockedMe(userId));
+        if (blocked.isEmpty()) blocked.add(-1L);
+        return blocked;
     }
 
     private Activity findActivityOrThrow(Long activityId) {

@@ -77,10 +77,15 @@ public class PostServiceImpl implements PostService {
         if (dto.getNeighborhoodId() != null) {
             post.setNeighborhood(neighborhoodRepository.findById(dto.getNeighborhoodId())
                     .orElseThrow(() -> new NotFoundException("Neighborhood not found")));
-        } else if (author.getLatitude() != null && author.getLongitude() != null) {
-            neighborhoodRepository
-                    .findNeighborhoodContainingPoint(author.getLatitude(), author.getLongitude())
-                    .ifPresent(post::setNeighborhood);
+        } else {
+            // Prefer the post's own GPS coords; fall back to author's stored location
+            Double nLat = dto.getLatitude()  != null ? dto.getLatitude()  : author.getLatitude();
+            Double nLon = dto.getLongitude() != null ? dto.getLongitude() : author.getLongitude();
+            if (nLat != null && nLon != null) {
+                neighborhoodRepository
+                        .findNeighborhoodContainingPoint(nLat, nLon)
+                        .ifPresent(post::setNeighborhood);
+            }
         }
 
         if (dto.getHashtags() != null && !dto.getHashtags().isEmpty()) {
@@ -160,13 +165,6 @@ public class PostServiceImpl implements PostService {
                 .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
     }
 
-    /**
-     * FIX: 3-tier fallback — never throws 404 for newly registered users.
-     *
-     * Tier 1: Neighborhood polygon containment (normal case)
-     * Tier 2: Nearest neighborhood center (GPS inside no polygon)
-     * Tier 3: Pure GPS radius (no neighborhoods seeded in DB yet)
-     */
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getNearbyFeed(
@@ -196,7 +194,7 @@ public class PostServiceImpl implements PostService {
         if (neighborhoodId != null) {
             posts = postRepository.findNearbyFeed(
                     neighborhoodId, geoDto.getLatitude(), geoDto.getLongitude(),
-                    blockedIds, pageable);
+                    geoDto.getRadiusMeters(), blockedIds, pageable);
         } else {
             // Tier 3: no neighborhoods in DB at all
             posts = postRepository.findNearbyFeedByGps(
@@ -387,8 +385,11 @@ public class PostServiceImpl implements PostService {
     }
 
     private List<Long> getBlockedIds(Long userId) {
-        List<Long> blocked = blockedUserRepository.findBlockedUserIds(userId);
+        List<Long> blocked = new java.util.ArrayList<>(blockedUserRepository.findBlockedUserIds(userId));
         blocked.addAll(blockedUserRepository.findUsersWhoBlockedMe(userId));
+        // Native SQL queries use NOT IN (:blockedIds); PostgreSQL rejects NOT IN ()
+        // so we add a sentinel that matches no real user ID.
+        if (blocked.isEmpty()) blocked.add(-1L);
         return blocked;
     }
 

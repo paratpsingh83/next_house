@@ -34,6 +34,8 @@ public class SearchServiceImpl implements SearchService {
     private final CommunityMapper communityMapper;
     private final MarketplaceMapper marketplaceMapper;
 
+    private final SearchHistoryWriter historyWriter;
+
     @Override
     @Transactional(readOnly = true)
     public SearchResultDTO globalSearch(String query, Long currentUserId, int page, int size) {
@@ -55,12 +57,11 @@ public class SearchServiceImpl implements SearchService {
         PageResponseDTO<MarketplaceItemResponseDTO> marketplace = PageResponseDTO.of(
                 marketplaceRepository.searchListings(trimmed, pageable).map(marketplaceMapper::toResponse));
 
-        // recordSearch is a no-op — self-invocation bypasses Spring AOP
-        // causing read-only TX violation on INSERT. History disabled for now.
-
-        return SearchResultDTO.builder()
+        SearchResultDTO result = SearchResultDTO.builder()
                 .users(users).posts(posts).activities(activities)
                 .communities(communities).marketplaceItems(marketplace).build();
+        historyWriter.record(currentUserId, trimmed, "ALL", 0);
+        return result;
     }
 
     @Override
@@ -117,9 +118,7 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public void recordSearch(Long userId, String keyword, String searchType, int resultCount) {
-        // No-op: self-invocation inside @Transactional(readOnly=true) causes
-        // "cannot execute INSERT in a read-only transaction" error.
-        // Search history is non-critical and disabled to prevent 500 errors.
+        historyWriter.record(userId, keyword, searchType, resultCount);
     }
 
     @Override

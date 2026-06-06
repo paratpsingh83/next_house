@@ -6,7 +6,9 @@ import com.NextHouse.dto.request.UpdateLocationRequestDTO;
 import com.NextHouse.dto.request.UpdateProfileRequestDTO;
 import com.NextHouse.dto.response.NearbyUserResponseDTO;
 import com.NextHouse.dto.response.UserResponseDTO;
+import com.NextHouse.dto.response.FollowRequestResponseDTO;
 import com.NextHouse.dto.response.UserSummaryDTO;
+import java.util.List;
 
 public interface UserService {
 
@@ -24,9 +26,16 @@ public interface UserService {
 
     PageResponseDTO<UserSummaryDTO> searchUsers(String query, int page, int size);
 
-    void followUser(Long currentUserId, Long targetUserId);
+    /** Returns "FOLLOWING" for public accounts or "REQUESTED" for private accounts. */
+    String followUser(Long currentUserId, Long targetUserId);
 
     void unfollowUser(Long currentUserId, Long targetUserId);
+
+    void acceptFollowRequest(Long requestId, Long currentUserId);
+
+    void rejectFollowRequest(Long requestId, Long currentUserId);
+
+    List<FollowRequestResponseDTO> getPendingFollowRequests(Long currentUserId);
 
     PageResponseDTO<UserSummaryDTO> getFollowers(Long userId, int page, int size);
 
@@ -36,5 +45,11 @@ public interface UserService {
 
     void unblockUser(Long currentUserId, Long targetUserId);
 
+    List<UserSummaryDTO> getBlockedUsers(Long currentUserId);
+
     void deleteAccount(Long currentUserId);
+
+    void requestAddressVerification(Long currentUserId);
+
+    void requestIdentityVerification(Long currentUserId);
 }

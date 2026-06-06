@@ -250,4 +250,28 @@ public class NotificationServiceImpl implements NotificationService {
             "/communities/" + communityId + "/members"
         );
     }
+
+    @Override
+    public void notifyFollowRequest(User requester, User target) {
+        sendNotification(
+            target.getId(), requester.getId(),
+            "FOLLOW_REQUEST",
+            requester.getName() + " wants to follow you",
+            "@" + requester.getUsername() + " sent you a follow request",
+            "USER", requester.getId(),
+            "/profile/" + requester.getId()
+        );
+    }
+
+    @Override
+    public void notifyFollowRequestAccepted(User acceptor, User requester) {
+        sendNotification(
+            requester.getId(), acceptor.getId(),
+            "FOLLOW_REQUEST_ACCEPTED",
+            acceptor.getName() + " accepted your follow request",
+            "@" + acceptor.getUsername() + " accepted your follow request",
+            "USER", acceptor.getId(),
+            "/profile/" + acceptor.getId()
+        );
+    }
 }

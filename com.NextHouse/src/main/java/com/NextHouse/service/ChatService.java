@@ -20,6 +20,8 @@ public interface ChatService {
 
     void deleteMessage(Long messageId, Long currentUserId);
 
+    ChatMessageResponseDTO unsendMessage(Long roomId, Long messageId, Long currentUserId);
+
     void markRoomAsRead(Long roomId, Long currentUserId);
 
     long getUnreadCount(Long roomId, Long currentUserId);

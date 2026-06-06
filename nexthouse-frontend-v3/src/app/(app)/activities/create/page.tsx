@@ -22,7 +22,7 @@ const schema = z.object({
   activityType:    z.string().min(1,'Select a type'),
   activityTime:    z.string().min(1,'Select date and time'),
   endTime:         z.string().optional(),
-  maxMembers:      z.number().min(2).max(10000).optional().or(z.literal('')),
+  maxMembers:      z.preprocess(v => (v === '' || v === null || v === undefined || Number.isNaN(Number(v))) ? undefined : Number(v), z.number().min(2,'Min 2').max(10000).optional()),
   privateActivity: z.boolean(),
   approvalRequired:z.boolean(),
   address:         z.string().optional(),
@@ -58,7 +58,7 @@ export default function CreateActivityPage() {
         activityType:     data.activityType as ActivityType,
         activityTime:     data.activityTime,
         endTime:          data.endTime || undefined,
-        maxMembers:       data.maxMembers ? Number(data.maxMembers) : undefined,
+        maxMembers:       data.maxMembers ?? undefined,
         privateActivity:  data.privateActivity,
         approvalRequired: data.approvalRequired,
         latitude:         loc.lat,
@@ -142,7 +142,7 @@ export default function CreateActivityPage() {
         {/* Max members */}
         <div>
           <label className="label flex items-center gap-1"><Users size={14}/>Max participants</label>
-          <input {...register('maxMembers', { valueAsNumber: true })} type="number" min={2} max={10000} placeholder="Leave empty for unlimited" className="input"/>
+          <input {...register('maxMembers')} type="number" min={2} max={10000} placeholder="Leave empty for unlimited" className="input"/>
         </div>
 
         {/* Privacy & Approval */}

@@ -50,4 +50,8 @@ public class ChatMessage extends BaseEntity {
     @JoinColumn(name = "sender_id", nullable = false,
             foreignKey = @ForeignKey(name = "fk_chat_msg_sender"))
     private User sender;
+
+    @Builder.Default
+    @Column(name = "is_unsent", nullable = false)
+    private Boolean isUnsent = false;
 }

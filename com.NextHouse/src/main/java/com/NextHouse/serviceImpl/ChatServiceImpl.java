@@ -5,6 +5,7 @@ import com.NextHouse.dto.common.PageResponseDTO;
 import com.NextHouse.dto.request.*;
 import com.NextHouse.dto.response.*;
 import com.NextHouse.entity.*;
+import com.NextHouse.repository.ChatMessageDeletionRepository;
 import com.NextHouse.event.DomainEvents;
 import com.NextHouse.event.KafkaEventPublisher;
 import com.NextHouse.exception.*;
@@ -50,11 +51,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
-    private final ChatRoomRepository       roomRepository;
-    private final ChatRoomMemberRepository memberRepository;
-    private final ChatMessageRepository    messageRepository;
-    private final UserRepository           userRepository;
-    private final BlockedUserRepository    blockedUserRepository;
+    private final ChatRoomRepository            roomRepository;
+    private final ChatRoomMemberRepository      memberRepository;
+    private final ChatMessageRepository         messageRepository;
+    private final ChatMessageDeletionRepository msgDeletionRepository;
+    private final UserRepository                userRepository;
+    private final BlockedUserRepository         blockedUserRepository;
+    private final UserPresenceRepository        userPresenceRepository;
 
     private final ChatMapper   chatMapper;
     private final UserMapper   userMapper;
@@ -213,17 +216,35 @@ public class ChatServiceImpl implements ChatService {
         assertMember(roomId, currentUserId);
         Pageable pageable = PageRequest.of(page, size);
         return PageResponseDTO.of(
-            messageRepository.findRoomHistory(roomId, pageable).map(chatMapper::toMessageResponse)
+            messageRepository.findRoomHistory(roomId, currentUserId, pageable).map(chatMapper::toMessageResponse)
         );
     }
 
     @Override
     @Transactional
     public void deleteMessage(Long messageId, Long currentUserId) {
-        int rows = messageRepository.softDeleteMessage(messageId, currentUserId);
-        if (rows == 0) {
-            throw new ForbiddenException("Cannot delete this message");
+        messageRepository.findById(messageId)
+                .orElseThrow(() -> new NotFoundException("Message not found: " + messageId));
+        // Idempotent — skip if already deleted for this user
+        if (!msgDeletionRepository.existsByMessageIdAndUserId(messageId, currentUserId)) {
+            User user    = findUserOrThrow(currentUserId);
+            ChatMessage msg = messageRepository.findById(messageId).get();
+            msgDeletionRepository.save(ChatMessageDeletion.builder().message(msg).user(user).build());
         }
+    }
+
+    @Override
+    @Transactional
+    public ChatMessageResponseDTO unsendMessage(Long roomId, Long messageId, Long currentUserId) {
+        assertMember(roomId, currentUserId);
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(1);
+        int rows = messageRepository.unsendMessage(messageId, currentUserId, cutoff);
+        if (rows == 0) {
+            throw new ForbiddenException("Cannot unsend: not your message or sent more than 1 minute ago");
+        }
+        ChatMessage msg = messageRepository.findById(messageId)
+                .orElseThrow(() -> new NotFoundException("Message not found"));
+        return chatMapper.toMessageResponse(msg);
     }
 
     @Override
@@ -231,8 +252,6 @@ public class ChatServiceImpl implements ChatService {
     public void markRoomAsRead(Long roomId, Long currentUserId) {
         assertMember(roomId, currentUserId);
         memberRepository.markAsRead(roomId, currentUserId, LocalDateTime.now());
-        // Invalidate Redis unread cache: "chat:unread:{userId}:{roomId}"
-        // redisTemplate.delete("chat:unread:" + currentUserId + ":" + roomId);
     }
 
     @Override
@@ -350,20 +369,39 @@ public class ChatServiceImpl implements ChatService {
             }
         }
 
-        // For GROUP rooms, include member list in response
-        if ("GROUP".equals(room.getRoomType()) || "DIRECT".equals(room.getRoomType())) {
-            List<ChatRoomMember> roomMembers = memberRepository.findByRoomIdAndIsDeletedFalse(room.getId());
-            memberCount = roomMembers.size();
-            members = roomMembers.stream()
-                    .map(m -> userMapper.toSummary(m.getUser()))
-                    .collect(Collectors.toList());
+        String resolvedTitle     = base.getTitle();
+        String resolvedAvatarUrl = base.getAvatarUrl();
+
+        List<ChatRoomMember> roomMembers = memberRepository.findByRoomIdAndIsDeletedFalse(room.getId());
+        memberCount = roomMembers.size();
+        members = roomMembers.stream()
+                .map(m -> {
+                    UserSummaryDTO summary = userMapper.toSummary(m.getUser());
+                    userPresenceRepository.findByUserId(m.getUser().getId())
+                            .ifPresent(p -> summary.setOnline(p.getOnline()));
+                    return summary;
+                })
+                .collect(Collectors.toList());
+
+        if ("DIRECT".equals(room.getRoomType())) {
+            // For DM rooms, derive title and avatar from the other participant
+            ChatRoomMember other = roomMembers.stream()
+                    .filter(m -> currentUserId != null && !m.getUser().getId().equals(currentUserId))
+                    .findFirst().orElse(null);
+            if (other != null) {
+                resolvedTitle     = other.getUser().getName();
+                resolvedAvatarUrl = other.getUser().getProfileImage();
+            } else {
+                // Edge case: other member removed/deleted — use safe fallback
+                if (resolvedTitle == null) resolvedTitle = "Direct Message";
+            }
         }
 
         return ChatRoomResponseDTO.builder()
                 .id(base.getId())
                 .roomType(base.getRoomType())
-                .title(base.getTitle())
-                .avatarUrl(base.getAvatarUrl())
+                .title(resolvedTitle)
+                .avatarUrl(resolvedAvatarUrl)
                 .lastMessagePreview(base.getLastMessagePreview())
                 .lastMessageAt(base.getLastMessageAt())
                 .unreadCount(unread)

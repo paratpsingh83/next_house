@@ -47,5 +47,6 @@ public interface ChatMapper {
     @Mapping(target = "replyToMessageId", source = "replyToMessage.id")
     @Mapping(target = "replyToPreview",   ignore = true)
     @Mapping(target = "isDeleted",        source = "isDeleted")
+    @Mapping(target = "isUnsent",         source = "isUnsent")
     ChatMessageResponseDTO toMessageResponse(ChatMessage message);
 }

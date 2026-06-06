@@ -40,7 +40,7 @@ export default function BorrowPage() {
 
   const nearbyQ = useInfiniteQuery({
     queryKey: ['borrow', 'nearby', neighborhood?.id],
-    queryFn:  ({ pageParam = 0 }) => borrowApi.byNeighborhood(neighborhood!.id, undefined, pageParam),
+    queryFn:  ({ pageParam = 0 }) => borrowApi.byNeighborhood(neighborhood?.id ?? 0, undefined, pageParam),
     getNextPageParam: (l: any) => l.hasNext ? l.page + 1 : undefined,
     initialPageParam: 0,
     enabled: tab === 'nearby' && !!neighborhood?.id,
@@ -96,7 +96,14 @@ export default function BorrowPage() {
       <div className="px-4 mt-4 space-y-3">
         {active.isLoading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-500" size={28}/></div>}
 
-        {!active.isLoading && items.length === 0 && (
+        {active.isError && !active.isLoading && (
+          <div className="card p-6 text-center">
+            <p className="text-sm font-semibold text-red-500 mb-2">Failed to load requests</p>
+            <button onClick={() => active.refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+          </div>
+        )}
+
+        {!active.isLoading && !active.isError && items.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <Package size={40} className="mx-auto mb-3 opacity-30"/>
             <p className="font-medium">No borrow requests yet</p>

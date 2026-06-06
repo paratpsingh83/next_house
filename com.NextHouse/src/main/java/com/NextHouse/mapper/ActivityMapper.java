@@ -16,22 +16,6 @@ import org.mapstruct.*;
 )
 public interface ActivityMapper {
 
-    /**
-     * FIX 1: activityType now maps correctly.
-     *         DTO.activityType is ActivityType enum (after DTO fix).
-     *         Entity.activityType is ActivityType enum.
-     *         MapStruct auto-maps enum → enum. No explicit mapping needed.
-     *
-     * FIX 2: Removed DUPLICATE @Mapping on target="status".
-     *         Original code had BOTH:
-     *           @Mapping(target = "status", constant = "PUBLISHED")  ← line 1
-     *           @Mapping(target = "status", ignore = true)           ← line 2
-     *         Two @Mapping annotations targeting the same field =
-     *         MapStruct compile error: "Duplicate @Mapping for target property"
-     *
-     *         KEPT: ignore = true (service sets ActivityStatus.PUBLISHED explicitly)
-     *         REMOVED: constant = "PUBLISHED" line
-     */
     @Mapping(target = "id",           ignore = true)
     @Mapping(target = "status",       ignore = true)  // service sets ActivityStatus.PUBLISHED
     @Mapping(target = "hostUser",     ignore = true)

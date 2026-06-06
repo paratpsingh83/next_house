@@ -47,9 +47,6 @@ public class PostComment extends BaseEntity {
             foreignKey = @ForeignKey(name = "fk_comment_author"))
     private User commentedBy;
 
-    /**
-     * FIX: Optimistic locking for likeCount increment safety.
-     */
     @Version
     @Column(name = "version")
     private Long version;

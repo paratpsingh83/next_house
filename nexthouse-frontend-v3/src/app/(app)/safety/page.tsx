@@ -34,7 +34,7 @@ export default function SafetyPage() {
     );
   }, []);
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
+  const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
     queryKey: ['safety', 'nearby', loc, radius],
     queryFn:  ({ pageParam = 0 }) => safetyApi.nearby(loc.lat, loc.lon, radius, pageParam),
     getNextPageParam: l => l.hasNext ? l.page + 1 : undefined,
@@ -97,8 +97,15 @@ export default function SafetyPage() {
       <div className="px-4 mt-4 space-y-3">
         {isLoading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-500" size={28}/></div>}
 
+        {isError && !isLoading && (
+          <div className="card p-6 text-center">
+            <p className="text-sm font-semibold text-red-500 mb-2">Failed to load safety alerts</p>
+            <button onClick={() => refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+          </div>
+        )}
+
         {/* All clear state */}
-        {!isLoading && activeItems.length === 0 && (
+        {!isLoading && !isError && activeItems.length === 0 && (
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
               <Shield size={28} className="text-green-500"/>

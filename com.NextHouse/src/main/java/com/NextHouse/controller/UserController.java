@@ -5,9 +5,11 @@ import com.NextHouse.dto.common.PageResponseDTO;
 import com.NextHouse.dto.request.NearbySearchRequestDTO;
 import com.NextHouse.dto.request.UpdateLocationRequestDTO;
 import com.NextHouse.dto.request.UpdateProfileRequestDTO;
+import com.NextHouse.dto.response.FollowRequestResponseDTO;
 import com.NextHouse.dto.response.NearbyUserResponseDTO;
 import com.NextHouse.dto.response.UserResponseDTO;
 import com.NextHouse.dto.response.UserSummaryDTO;
+import java.util.List;
 import com.NextHouse.security.CurrentUser;
 import com.NextHouse.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -143,16 +145,43 @@ public class UserController {
 
     @PostMapping("/{userId}/follow")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Follow a user")
+    @Operation(summary = "Follow a user",
+        description = "If the target account is public, follows immediately (status=FOLLOWING). If private, sends a follow request (status=REQUESTED).")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Followed successfully"),
-        @ApiResponse(responseCode = "409", description = "Already following this user")
+        @ApiResponse(responseCode = "200", description = "Followed or follow request sent"),
+        @ApiResponse(responseCode = "409", description = "Already following or request already sent")
     })
-    public ResponseEntity<ApiResponseDTO<Void>> followUser(
+    public ResponseEntity<ApiResponseDTO<String>> followUser(
             @CurrentUser Long currentUserId,
             @PathVariable Long userId) {
-        userService.followUser(currentUserId, userId);
-        return ResponseEntity.ok(ApiResponseDTO.success("User followed successfully"));
+        String status = userService.followUser(currentUserId, userId);
+        String msg = "REQUESTED".equals(status) ? "Follow request sent" : "User followed successfully";
+        return ResponseEntity.ok(ApiResponseDTO.success(msg, status));
+    }
+
+    @GetMapping("/follow-requests")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Get pending follow requests", description = "Returns users who sent you a follow request, including the requestId needed for accept/reject.")
+    public ResponseEntity<ApiResponseDTO<List<FollowRequestResponseDTO>>> getFollowRequests(@CurrentUser Long currentUserId) {
+        return ResponseEntity.ok(ApiResponseDTO.success(userService.getPendingFollowRequests(currentUserId)));
+    }
+
+    @PostMapping("/follow-requests/{requestId}/accept")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Accept a follow request")
+    public ResponseEntity<ApiResponseDTO<Void>> acceptFollowRequest(
+            @PathVariable Long requestId, @CurrentUser Long currentUserId) {
+        userService.acceptFollowRequest(requestId, currentUserId);
+        return ResponseEntity.ok(ApiResponseDTO.success("Follow request accepted"));
+    }
+
+    @DeleteMapping("/follow-requests/{requestId}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Reject (delete) a follow request")
+    public ResponseEntity<ApiResponseDTO<Void>> rejectFollowRequest(
+            @PathVariable Long requestId, @CurrentUser Long currentUserId) {
+        userService.rejectFollowRequest(requestId, currentUserId);
+        return ResponseEntity.ok(ApiResponseDTO.success("Follow request rejected"));
     }
 
     @DeleteMapping("/{userId}/follow")
@@ -210,5 +239,36 @@ public class UserController {
             @PathVariable Long userId) {
         userService.unblockUser(currentUserId, userId);
         return ResponseEntity.ok(ApiResponseDTO.success("User unblocked"));
+    }
+
+    @GetMapping("/me/blocked")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Get blocked users", description = "Returns all users the current user has blocked.")
+    public ResponseEntity<ApiResponseDTO<List<UserSummaryDTO>>> getBlockedUsers(@CurrentUser Long currentUserId) {
+        return ResponseEntity.ok(ApiResponseDTO.success(userService.getBlockedUsers(currentUserId)));
+    }
+
+    // ─── Verification ─────────────────────────────────────────────────────────
+
+    @PostMapping("/me/verify-address")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Request address verification",
+        description = "Marks the user's address as verified. Requires address to be set in profile. Adds +10 trust score."
+    )
+    public ResponseEntity<ApiResponseDTO<Void>> verifyAddress(@CurrentUser Long currentUserId) {
+        userService.requestAddressVerification(currentUserId);
+        return ResponseEntity.ok(ApiResponseDTO.success("Address verified successfully"));
+    }
+
+    @PostMapping("/me/verify-identity")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Request identity verification",
+        description = "Marks the user's identity as verified. Adds +20 trust score."
+    )
+    public ResponseEntity<ApiResponseDTO<Void>> verifyIdentity(@CurrentUser Long currentUserId) {
+        userService.requestIdentityVerification(currentUserId);
+        return ResponseEntity.ok(ApiResponseDTO.success("Identity verified successfully"));
     }
 }

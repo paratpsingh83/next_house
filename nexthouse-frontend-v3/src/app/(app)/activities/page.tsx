@@ -99,7 +99,13 @@ export default function ActivitiesPage() {
         {active.isLoading && (
           <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-500" size={28}/></div>
         )}
-        {!active.isLoading && items.length === 0 && (
+        {active.isError && !active.isLoading && (
+          <div className="card p-6 text-center">
+            <p className="text-sm font-semibold text-red-500 mb-2">Failed to load activities</p>
+            <button onClick={() => active.refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+          </div>
+        )}
+        {!active.isLoading && !active.isError && items.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <CalendarDays size={40} className="mx-auto mb-3 opacity-30"/>
             <p className="font-medium">{tab === 'nearby' ? 'No activities nearby' : "You haven't joined any activities"}</p>

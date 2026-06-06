@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -34,6 +35,7 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
                     :radiusMeters
                   )
               AND (:activityType IS NULL OR a.activity_type = :activityType)
+              AND a.host_user_id NOT IN (:blockedIds)
             ORDER BY ST_Distance(
                        a.location::geography,
                        ST_MakePoint(:longitude, :latitude)::geography
@@ -41,10 +43,11 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
                      a.activity_time ASC
             """, nativeQuery = true)
     Page<Activity> findNearbyActivities(
-            @Param("latitude")     double  latitude,
-            @Param("longitude")    double  longitude,
-            @Param("radiusMeters") int     radiusMeters,
-            @Param("activityType") String  activityType,
+            @Param("latitude")     double           latitude,
+            @Param("longitude")    double           longitude,
+            @Param("radiusMeters") int              radiusMeters,
+            @Param("activityType") String           activityType,
+            @Param("blockedIds")   Collection<Long> blockedIds,
             Pageable pageable
     );
 
@@ -56,7 +59,8 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
             SELECT a FROM Activity a
             JOIN ActivityMember am ON am.activity = a
             WHERE am.user.id = :userId
-              AND am.joinStatus = 'APPROVED'
+              AND am.joinStatus = com.NextHouse.constant.JoinStatus.APPROVED
+              AND am.isDeleted = false
               AND a.isDeleted = false
             ORDER BY a.activityTime ASC
             """)
@@ -103,7 +107,18 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
     @Query("""
             SELECT COUNT(am) FROM ActivityMember am
             WHERE am.activity.id = :activityId
-              AND am.joinStatus = 'APPROVED'
+              AND am.joinStatus = com.NextHouse.constant.JoinStatus.APPROVED
+              AND am.isDeleted = false
             """)
     int countApprovedMembers(@Param("activityId") Long activityId);
+
+    /** Batch approved-member counts for a set of activity IDs. Returns [activityId, count] rows. */
+    @Query("""
+            SELECT am.activity.id, COUNT(am) FROM ActivityMember am
+            WHERE am.activity.id IN :ids
+              AND am.joinStatus = com.NextHouse.constant.JoinStatus.APPROVED
+              AND am.isDeleted = false
+            GROUP BY am.activity.id
+            """)
+    List<Object[]> countApprovedMembersForActivities(@Param("ids") Collection<Long> ids);
 }

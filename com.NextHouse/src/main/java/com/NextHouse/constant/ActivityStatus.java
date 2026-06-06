@@ -3,7 +3,7 @@ package com.NextHouse.constant;
 public enum ActivityStatus {
     DRAFT,
     PUBLISHED,
-    FULL,       // maxMembers reached
+    FULL,
     CANCELLED,
     COMPLETED,
     EXPIRED

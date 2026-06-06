@@ -95,8 +95,6 @@ public class MarketplaceServiceImpl implements MarketplaceService {
     @Transactional(readOnly = true)
     public MarketplaceItemResponseDTO getItem(Long itemId, Long currentUserId) {
         MarketplaceItem item = findItemOrThrow(itemId);
-        // Track view in Redis (fire-and-forget)
-        // redisTemplate.opsForValue().increment("marketplace:views:" + itemId);
         return enrichItemResponse(marketplaceMapper.toResponse(item));
     }
 

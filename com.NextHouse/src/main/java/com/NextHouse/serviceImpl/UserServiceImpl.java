@@ -33,6 +33,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository             userRepository;
     private final FollowRepository           followRepository;
+    private final FollowRequestRepository    followRequestRepository;
     private final BlockedUserRepository      blockedUserRepository;
     private final UserNeighborhoodRepository userNeighborhoodRepository;
     private final UserPresenceRepository     userPresenceRepository;
@@ -45,7 +46,6 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(value = "user:profile", key = "#userId")
     public UserResponseDTO getProfile(Long userId, Long requestingUserId) {
         return buildUserResponse(findUserOrThrow(userId), requestingUserId);
     }
@@ -58,7 +58,6 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "user:profile", key = "#currentUserId")
     public UserResponseDTO updateProfile(Long currentUserId, UpdateProfileRequestDTO dto) {
         User user = findUserOrThrow(currentUserId);
         userMapper.updateFromRequest(dto, user);
@@ -116,15 +115,27 @@ public class UserServiceImpl implements UserService {
             dto.getLatitude(), dto.getLongitude(), dto.getRadiusMeters(), currentUserId, NEARBY_LIMIT);
 
         Set<Long> blockedSet = Set.copyOf(blockedIds);
-        List<NearbyUserResponseDTO> results = nearbyUsers.stream()
+        List<User> filteredUsers = nearbyUsers.stream()
             .filter(u -> !blockedSet.contains(u.getId()))
-            .map(u -> NearbyUserResponseDTO.builder()
-                    .user(userMapper.toSummary(u))
+            .collect(Collectors.toList());
+
+        List<Long> filteredIds = filteredUsers.stream().map(User::getId).collect(Collectors.toList());
+        Set<Long> followedIds  = filteredIds.isEmpty() ? Set.of() : followRepository.findFollowingIds(currentUserId, filteredIds);
+        Set<Long> requestedIds = filteredIds.isEmpty() ? Set.of() : followRequestRepository.findRequestedIds(currentUserId, filteredIds);
+
+        List<NearbyUserResponseDTO> results = filteredUsers.stream()
+            .map(u -> {
+                UserSummaryDTO summary = userMapper.toSummary(u);
+                summary.setIsFollowing(followedIds.contains(u.getId()));
+                summary.setIsRequested(requestedIds.contains(u.getId()));
+                return NearbyUserResponseDTO.builder()
+                    .user(summary)
                     .distanceMeters(approximateDistanceMeters(
                         dto.getLatitude(), dto.getLongitude(),
                         u.getLatitude() != null ? u.getLatitude() : 0,
                         u.getLongitude() != null ? u.getLongitude() : 0))
-                    .build())
+                    .build();
+            })
             .collect(Collectors.toList());
 
         int from = Math.min(page * size, results.size());
@@ -135,8 +146,21 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<UserSummaryDTO> getSuggestedUsers(Long currentUserId, int page, int size) {
-        return PageResponseDTO.of(
-            userRepository.findSuggestedUsers(currentUserId, PageRequest.of(page, size)).map(userMapper::toSummary));
+        PageRequest pageable = PageRequest.of(page, size);
+        Page<User> users = userRepository.findSuggestedUsers(currentUserId, pageable);
+        if (users.isEmpty()) {
+            users = userRepository.findPopularUsers(currentUserId, pageable);
+        }
+        List<Long> userIds    = users.getContent().stream().map(User::getId).collect(Collectors.toList());
+        Set<Long> followedIds = userIds.isEmpty() ? Set.of() : followRepository.findFollowingIds(currentUserId, userIds);
+        Set<Long> requestedIds= userIds.isEmpty() ? Set.of() : followRequestRepository.findRequestedIds(currentUserId, userIds);
+
+        return PageResponseDTO.of(users.map(u -> {
+            UserSummaryDTO dto = userMapper.toSummary(u);
+            dto.setIsFollowing(followedIds.contains(u.getId()));
+            dto.setIsRequested(requestedIds.contains(u.getId()));
+            return dto;
+        }));
     }
 
     @Override
@@ -148,7 +172,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void followUser(Long currentUserId, Long targetUserId) {
+    public String followUser(Long currentUserId, Long targetUserId) {
         if (currentUserId.equals(targetUserId)) throw new ConflictException("Cannot follow yourself");
         if (followRepository.existsByFollowerIdAndFollowingId(currentUserId, targetUserId))
             throw new ConflictException("Already following this user");
@@ -158,13 +182,20 @@ public class UserServiceImpl implements UserService {
         User follower = findUserOrThrow(currentUserId);
         User followed = findUserOrThrow(targetUserId);
 
+        if (Boolean.TRUE.equals(followed.getIsPrivate())) {
+            if (followRequestRepository.existsByRequesterIdAndTargetId(currentUserId, targetUserId))
+                throw new ConflictException("Follow request already sent");
+            followRequestRepository.save(FollowRequest.builder().requester(follower).target(followed).build());
+            notificationService.notifyFollowRequest(follower, followed);
+            return "REQUESTED";
+        }
+
         followRepository.save(Follow.builder().follower(follower).following(followed).build());
-
         notificationService.notifyFollow(follower, followed);
-
         eventPublisher.publishUserFollowed(DomainEvents.UserFollowedEvent.builder()
                 .eventId(KafkaEventPublisher.newEventId()).occurredAt(LocalDateTime.now())
                 .actorId(currentUserId).followerId(currentUserId).followedId(targetUserId).build());
+        return "FOLLOWING";
     }
 
     @Override
@@ -185,6 +216,57 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public PageResponseDTO<UserSummaryDTO> getFollowing(Long userId, int page, int size) {
         return PageResponseDTO.of(followRepository.findFollowing(userId, PageRequest.of(page, size)).map(userMapper::toSummary));
+    }
+
+    @Override
+    @Transactional
+    public void acceptFollowRequest(Long requestId, Long currentUserId) {
+        FollowRequest req = followRequestRepository.findById(requestId)
+            .orElseThrow(() -> new NotFoundException("Follow request not found"));
+        if (!req.getTarget().getId().equals(currentUserId))
+            throw new ForbiddenException("Not your follow request");
+
+        User requester = req.getRequester();
+        User acceptor  = findUserOrThrow(currentUserId);
+
+        if (!followRepository.existsByFollowerIdAndFollowingId(requester.getId(), currentUserId)) {
+            followRepository.save(Follow.builder().follower(requester).following(acceptor).build());
+        }
+        followRequestRepository.delete(req);
+
+        notificationService.notifyFollowRequestAccepted(acceptor, requester);
+        notificationService.notifyFollow(requester, acceptor);
+
+        eventPublisher.publishUserFollowed(DomainEvents.UserFollowedEvent.builder()
+            .eventId(KafkaEventPublisher.newEventId()).occurredAt(LocalDateTime.now())
+            .actorId(requester.getId()).followerId(requester.getId()).followedId(currentUserId).build());
+    }
+
+    @Override
+    @Transactional
+    public void rejectFollowRequest(Long requestId, Long currentUserId) {
+        FollowRequest req = followRequestRepository.findById(requestId)
+            .orElseThrow(() -> new NotFoundException("Follow request not found"));
+        if (!req.getTarget().getId().equals(currentUserId))
+            throw new ForbiddenException("Not your follow request");
+        followRequestRepository.delete(req);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FollowRequestResponseDTO> getPendingFollowRequests(Long currentUserId) {
+        return followRequestRepository.findPendingRequestsForUser(currentUserId).stream()
+            .map(r -> {
+                UserSummaryDTO requester = userMapper.toSummary(r.getRequester());
+                requester.setIsFollowing(false);
+                requester.setIsRequested(true);
+                return FollowRequestResponseDTO.builder()
+                        .requestId(r.getId())
+                        .requester(requester)
+                        .requestedAt(r.getCreatedAt())
+                        .build();
+            })
+            .collect(Collectors.toList());
     }
 
     @Override
@@ -212,6 +294,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<UserSummaryDTO> getBlockedUsers(Long currentUserId) {
+        return blockedUserRepository.findBlockedUsers(currentUserId)
+                .stream()
+                .map(userMapper::toSummary)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     @CacheEvict(value = "user:profile", key = "#currentUserId")
     public void deleteAccount(Long currentUserId) {
@@ -221,30 +312,38 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
     }
 
+    @Override
+    @Transactional
+    public void requestAddressVerification(Long currentUserId) {
+        User user = findUserOrThrow(currentUserId);
+        if (user.getAddressVerified()) throw new BadRequestException("Address is already verified");
+        if (user.getAddress() == null || user.getAddress().isBlank())
+            throw new BadRequestException("Please set your address in your profile before requesting verification");
+        user.setAddressVerified(true);
+        user.setTrustScore(user.getTrustScore() + 10);
+        userRepository.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void requestIdentityVerification(Long currentUserId) {
+        User user = findUserOrThrow(currentUserId);
+        if (user.getIdentityVerified()) throw new BadRequestException("Identity is already verified");
+        user.setIdentityVerified(true);
+        user.setVerificationStatus("VERIFIED");
+        user.setTrustScore(user.getTrustScore() + 20);
+        userRepository.save(user);
+    }
+
     private User findUserOrThrow(Long userId) {
         return userRepository.findById(userId)
                 .filter(u -> !u.getIsDeleted())
                 .orElseThrow(() -> new NotFoundException("User not found: " + userId));
     }
 
-    /**
-     * FIX: buildUserResponse() was loading UserPresence but NEVER using the values.
-     * Original code:
-     *   userPresenceRepository.findByUserId(user.getId()).ifPresent(presence -> {
-     *       // UserResponseDTO is immutable (Lombok @Builder) so we rebuild...
-     *       // Here we demonstrate the enrichment pattern:
-     *       (NOTHING HAPPENED — presence values were loaded and discarded)
-     *   });
-     *
-     * Result: online and lastSeen were ALWAYS NULL in every user profile response.
-     *
-     * FIX: Extract online + lastSeen from presence BEFORE building the DTO,
-     *      then pass them into the UserResponseDTO.builder() call.
-     */
     private UserResponseDTO buildUserResponse(User user, Long requestingUserId) {
         UserResponseDTO dto = userMapper.toResponse(user);
 
-        // FIX: Actually extract presence values (was loaded but discarded before)
         Boolean online = null;
         LocalDateTime lastSeen = null;
         var presenceOpt = userPresenceRepository.findByUserId(user.getId());
@@ -259,10 +358,12 @@ public class UserServiceImpl implements UserService {
         boolean isFollowing  = false;
         boolean isFollowedBy = false;
         boolean isBlocked    = false;
+        boolean isRequested  = false;
         if (requestingUserId != null && !requestingUserId.equals(user.getId())) {
             isFollowing  = followRepository.existsByFollowerIdAndFollowingId(requestingUserId, user.getId());
             isFollowedBy = followRepository.existsByFollowerIdAndFollowingId(user.getId(), requestingUserId);
             isBlocked    = blockedUserRepository.existsByUserIdAndBlockedUserId(requestingUserId, user.getId());
+            isRequested  = !isFollowing && followRequestRepository.existsByRequesterIdAndTargetId(requestingUserId, user.getId());
         }
 
         return UserResponseDTO.builder()
@@ -274,18 +375,21 @@ public class UserServiceImpl implements UserService {
                 .bio(dto.getBio())
                 .gender(dto.getGender())
                 .dob(dto.getDob())
+                .address(user.getAddress())
                 .verificationStatus(dto.getVerificationStatus())
                 .accountStatus(dto.getAccountStatus())
                 .trustScore(dto.getTrustScore())
                 .addressVerified(dto.getAddressVerified())
                 .identityVerified(dto.getIdentityVerified())
-                .online(online)          // FIX: was always null
-                .lastSeen(lastSeen)      // FIX: was always null
+                .online(online)
+                .lastSeen(lastSeen)
                 .followerCount(followerCount)
                 .followingCount(followingCount)
+                .isPrivate(user.getIsPrivate())
                 .isFollowing(isFollowing)
                 .isFollowedBy(isFollowedBy)
                 .isBlocked(isBlocked)
+                .isRequested(isRequested)
                 .createdAt(dto.getCreatedAt())
                 .build();
     }

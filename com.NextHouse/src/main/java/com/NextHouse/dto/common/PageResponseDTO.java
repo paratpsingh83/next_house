@@ -4,19 +4,6 @@ import lombok.*;
 import org.springframework.data.domain.Page;
 import java.util.List;
 
-/**
- * FIX: Missing @NoArgsConstructor and @AllArgsConstructor.
- *
- * Jackson requires either:
- *   A) A no-args constructor + @JsonProperty on fields, OR
- *   B) @JsonCreator with matching constructor
- * Without these, Jackson cannot deserialize PageResponseDTO in:
- *   - Unit tests that deserialize JSON responses
- *   - REST clients using RestTemplate / WebClient
- *
- * @Builder alone is not enough — it only generates a builder,
- * not a no-args or all-args constructor that Jackson can use.
- */
 @Getter
 @Builder
 @NoArgsConstructor

@@ -11,10 +11,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
-/**
- * FIX: Original stub returned fake CDN URLs, so uploaded images were broken.
- * In dev (localhost), files are now saved to ./uploads/ and served by WebMvcConfig.
- */
 @Slf4j
 @Service
 public class S3StorageService {

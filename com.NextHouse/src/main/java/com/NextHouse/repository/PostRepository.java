@@ -27,11 +27,18 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             @Param("blockedIds") List<Long> blockedIds,
             Pageable pageable);
 
-    /** Tier 1+2 — neighborhood-scoped nearby feed */
+    /** Tier 1+2 — neighborhood-scoped nearby feed, also includes posts without a neighbourhood within GPS radius */
     @Query(value = """
             SELECT p.* FROM posts p
             WHERE p.is_deleted = false AND p.status = 'PUBLISHED'
-              AND p.neighborhood_id = :neighborhoodId
+              AND (
+                p.neighborhood_id = :neighborhoodId
+                OR (p.neighborhood_id IS NULL
+                    AND p.location IS NOT NULL
+                    AND ST_DWithin(p.location::geography,
+                          ST_MakePoint(:longitude,:latitude)::geography,
+                          :radiusMeters))
+              )
               AND p.created_by NOT IN (:blockedIds)
               AND (p.visibility_radius IS NULL
                    OR ST_DWithin(p.location::geography,
@@ -43,13 +50,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             @Param("neighborhoodId") Long neighborhoodId,
             @Param("latitude") double latitude,
             @Param("longitude") double longitude,
+            @Param("radiusMeters") int radiusMeters,
             @Param("blockedIds") List<Long> blockedIds,
             Pageable pageable);
 
-    /**
-     * FIX: Tier 3 fallback — pure GPS radius when no neighborhoods exist.
-     * Without this, newly registered users see a 404 on the feed page.
-     */
     @Query(value = """
             SELECT p.* FROM posts p
             WHERE p.is_deleted = false AND p.status = 'PUBLISHED'
@@ -90,10 +94,6 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             @Param("blockedIds") List<Long> blockedIds,
             Pageable pageable);
 
-    /**
-     * FIX: renamed findByCreatedById → findUserPosts to match PostServiceImpl.
-     * Also respects blocked user list.
-     */
     @Query("""
             SELECT p FROM Post p
             WHERE p.isDeleted = false AND p.status = com.NextHouse.constant.PostStatus.PUBLISHED

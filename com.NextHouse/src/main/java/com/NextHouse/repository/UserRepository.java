@@ -113,6 +113,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
             Pageable pageable
     );
 
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.isDeleted = false
+              AND u.banned = false
+              AND u.accountStatus = 'ACTIVE'
+              AND u.id <> :currentUserId
+              AND NOT EXISTS (
+                  SELECT 1 FROM Follow f
+                  WHERE f.follower.id = :currentUserId AND f.following = u
+              )
+            ORDER BY u.trustScore DESC, u.createdAt DESC
+            """)
+    Page<User> findPopularUsers(@Param("currentUserId") Long currentUserId, Pageable pageable);
+
     @Modifying
     @Query("UPDATE User u SET u.banned = true WHERE u.id IN :ids")
     int banUsers(@Param("ids") List<Long> ids);

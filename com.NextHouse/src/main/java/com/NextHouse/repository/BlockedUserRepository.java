@@ -19,6 +19,12 @@ public interface BlockedUserRepository extends JpaRepository<BlockedUser, Long> 
     void deleteByUserIdAndBlockedUserId(Long userId, Long blockedUserId);
 
     /**
+     * Returns blocked User entities for the given userId — used in privacy settings UI.
+     */
+    @Query("SELECT b.blockedUser FROM BlockedUser b WHERE b.user.id = :userId AND b.isDeleted = false ORDER BY b.createdAt DESC")
+    List<com.NextHouse.entity.User> findBlockedUsers(@Param("userId") Long userId);
+
+    /**
      * Returns all IDs of users that :userId has blocked — used for feed filtering.
      */
     @Query("SELECT b.blockedUser.id FROM BlockedUser b WHERE b.user.id = :userId AND b.isDeleted = false")

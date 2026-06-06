@@ -155,7 +155,7 @@ export default function ActivityDetailPage() {
                 {label:'Type',    value:`${TYPE_EMOJI[activity.activityType]} ${activity.activityType}`},
                 {label:'Privacy', value:activity.privateActivity?'🔒 Private':'🌐 Public'},
                 {label:'Approval',value:activity.approvalRequired?'✋ Required':'✅ Auto'},
-                {label:'Posted',  value:formatDistanceToNow(new Date(activity.activityTime),{addSuffix:true})},
+                {label:'Posted',  value:formatDistanceToNow(new Date(activity.createdAt),{addSuffix:true})},
               ].map(({label,value})=>(
                 <div key={label} className="bg-gray-50 rounded-xl p-3">
                   <p className="text-xs text-gray-400 mb-1">{label}</p>

@@ -22,6 +22,8 @@ public class UpdateProfileRequestDTO {
     private LocalDate dob;
     private String profileImage;
 
+    private Boolean isPrivate;
+
     // Location update
     private Double latitude;
     private Double longitude;

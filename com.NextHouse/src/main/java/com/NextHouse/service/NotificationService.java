@@ -25,6 +25,10 @@ public interface NotificationService {
     // Convenience methods used by event listeners
     void notifyFollow(User follower, User followed);
 
+    void notifyFollowRequest(User requester, User target);
+
+    void notifyFollowRequestAccepted(User acceptor, User requester);
+
     void notifyPostLike(User liker, Long postId, Long postOwnerId);
 
     void notifyComment(User commenter, Long postId, Long postOwnerId);

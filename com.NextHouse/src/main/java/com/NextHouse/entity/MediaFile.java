@@ -31,10 +31,6 @@ public class MediaFile extends BaseEntity {
     @Column(name = "type", nullable = false, length = 20)
     private String type;
 
-    /**
-     * FIX: Renamed `provider` → `storage_provider` for clarity.
-     * S3 | GCS | CLOUDINARY | LOCAL
-     */
     @Column(name = "storage_provider", length = 30)
     private String storageProvider;
 

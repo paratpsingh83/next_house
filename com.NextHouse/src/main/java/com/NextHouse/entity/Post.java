@@ -76,9 +76,6 @@ public class Post extends CommunityScopedEntity {
     @Column(name = "hashtag_string", length = 500)
     private String hashtagString;
 
-    /**
-     * FIX: Optimistic locking — required for safe counter increments.
-     */
     @Version
     @Column(name = "version")
     private Long version;

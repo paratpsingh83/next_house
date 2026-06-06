@@ -27,7 +27,9 @@ public class Notification extends BaseEntity {
     private String message;
 
     /**
-     * LIKE | COMMENT | FOLLOW | ACTIVITY_INVITE | COMMUNITY_JOIN | SAFETY_ALERT | SYSTEM
+     * LIKE | COMMENT | FOLLOW | FOLLOW_REQUEST | FOLLOW_REQUEST_ACCEPTED |
+     * ACTIVITY_JOIN_REQUEST | ACTIVITY_APPROVED | ACTIVITY_REJECTED |
+     * COMMUNITY_JOIN_REQUEST | COMMUNITY_APPROVED | SAFETY_ALERT | SYSTEM | MESSAGE
      */
     @Column(name = "notification_type", nullable = false, length = 50)
     private String notificationType;

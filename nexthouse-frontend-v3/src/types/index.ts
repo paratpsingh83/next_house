@@ -113,6 +113,7 @@ export interface UserResponse {
   bio?: string;
   gender?: string;
   dob?: string;
+  address?: string;
   verificationStatus: string;
   accountStatus: string;
   trustScore: number;
@@ -122,9 +123,11 @@ export interface UserResponse {
   lastSeen?: string;
   followerCount?: number;
   followingCount?: number;
+  isPrivate?: boolean;
   isFollowing?: boolean;
   isFollowedBy?: boolean;
   isBlocked?: boolean;
+  isRequested?: boolean;
   createdAt: string;
 }
 
@@ -137,6 +140,15 @@ export interface UserSummaryDTO {
   online?: boolean;
   addressVerified?: boolean;
   identityVerified?: boolean;
+  isPrivate?: boolean;
+  isFollowing?: boolean;
+  isRequested?: boolean;
+}
+
+export interface FollowRequestItem {
+  requestId:    number;
+  requester:    UserSummaryDTO;
+  requestedAt?: string;
 }
 
 export interface NearbyUserResponse {
@@ -150,6 +162,7 @@ export interface UpdateProfileRequest {
   gender?: string;
   dob?: string;
   profileImage?: string;
+  isPrivate?: boolean;
   latitude?: number;
   longitude?: number;
   address?: string;
@@ -157,6 +170,30 @@ export interface UpdateProfileRequest {
   state?: string;
   country?: string;
   zipCode?: string;
+}
+
+// ─── Stories ──────────────────────────────────────────────────────────────────
+export type StoryMediaType = 'IMAGE' | 'VIDEO' | 'TEXT';
+
+export interface StoryResponse {
+  id:               number;
+  author:           UserSummaryDTO;
+  mediaUrl?:        string;
+  mediaType:        StoryMediaType;
+  textContent?:     string;
+  backgroundColor?: string;
+  expiresAt:        string;
+  createdAt:        string;
+  viewCount:        number;
+  viewedByMe:       boolean;
+  isOwn:            boolean;
+}
+
+export interface CreateStoryRequest {
+  mediaUrl?:        string;
+  mediaType:        StoryMediaType;
+  textContent?:     string;
+  backgroundColor?: string;
 }
 
 export interface UpdateLocationRequest {
@@ -369,6 +406,7 @@ export interface ChatMessageResponse {
   message?: string;
   mediaUrl?: string;
   isDeleted: boolean;
+  isUnsent?: boolean;
   editedAt?: string;
   sender: UserSummaryDTO;
   replyToMessageId?: number;

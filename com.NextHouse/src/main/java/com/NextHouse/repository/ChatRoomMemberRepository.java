@@ -32,6 +32,7 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
             FROM chat_messages cm
             WHERE cm.room_id = :roomId
               AND cm.is_deleted = false
+              AND cm.is_unsent = false
               AND (CAST(:lastReadAt AS timestamp) IS NULL OR cm.created_at > CAST(:lastReadAt AS timestamp))
               AND cm.sender_id <> :userId
             """, nativeQuery = true)

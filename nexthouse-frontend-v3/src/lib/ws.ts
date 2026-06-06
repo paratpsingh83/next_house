@@ -115,16 +115,16 @@ export const wsClient = {
 
   // Send a chat message → /app/chat/rooms/{roomId}/send
   sendMessage(roomId: number, payload: { messageType?: string; message?: string; replyToMessageId?: number }): void {
-    client?.publish({ destination: `/app/chat/rooms/${roomId}/send`, body: JSON.stringify(payload) });
+    if (client?.connected) client.publish({ destination: `/app/chat/rooms/${roomId}/send`, body: JSON.stringify(payload) });
   },
 
   // Send typing indicator → /app/chat/rooms/{roomId}/typing
   sendTyping(roomId: number, typing: boolean): void {
-    client?.publish({ destination: `/app/chat/rooms/${roomId}/typing`, body: JSON.stringify({ typing }) });
+    if (client?.connected) client.publish({ destination: `/app/chat/rooms/${roomId}/typing`, body: JSON.stringify({ typing }) });
   },
 
   // Mark room as read → /app/chat/rooms/{roomId}/read
   markRead(roomId: number): void {
-    client?.publish({ destination: `/app/chat/rooms/${roomId}/read`, body: '{}' });
+    if (client?.connected) client.publish({ destination: `/app/chat/rooms/${roomId}/read`, body: '{}' });
   },
 };

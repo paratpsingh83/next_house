@@ -7,7 +7,7 @@ import type {
   LoginRequest, RegisterRequest, OtpRequest, OtpVerifyRequest,
   ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest,
   OAuth2LoginRequest, RefreshTokenRequest,
-  UserResponse, UserSummaryDTO, NearbyUserResponse,
+  UserResponse, UserSummaryDTO, NearbyUserResponse, FollowRequestItem,
   UpdateProfileRequest, UpdateLocationRequest,
   PostResponse, PostCommentResponse,
   CreatePostRequest, UpdatePostRequest, CreateCommentRequest, ReactPostRequest,
@@ -20,6 +20,7 @@ import type {
   SafetyAlertResponse, CreateSafetyAlertRequest,
   BorrowRequestResponse, CreateBorrowRequest,
   MediaFileResponse, SearchResultDTO,
+  StoryResponse, CreateStoryRequest,
   PageResponse,
 } from '@/types';
 
@@ -51,12 +52,19 @@ export const usersApi = {
   getNearby:      (lat: number, lon: number, radius = 5000, page = 0, size = 20)  => apiGet<PageResponse<NearbyUserResponse>>('/users/nearby', { latitude: lat, longitude: lon, radiusMeters: radius, page, size }),
   getSuggestions: (page = 0, size = 20)                                            => apiGet<PageResponse<UserSummaryDTO>>('/users/suggestions', { page, size }),
   search:         (query: string, page = 0, size = 20)                            => apiGet<PageResponse<UserSummaryDTO>>('/users/search', { query, page, size }),
-  follow:         (userId: number)                                                 => apiPost<void>(`/users/${userId}/follow`),
-  unfollow:       (userId: number)                                                 => apiDelete<void>(`/users/${userId}/follow`),
-  getFollowers:   (userId: number, page = 0, size = 20)                           => apiGet<PageResponse<UserSummaryDTO>>(`/users/${userId}/followers`, { page, size }),
-  getFollowing:   (userId: number, page = 0, size = 20)                           => apiGet<PageResponse<UserSummaryDTO>>(`/users/${userId}/following`, { page, size }),
-  block:          (userId: number)                                                 => apiPost<void>(`/users/${userId}/block`),
-  unblock:        (userId: number)                                                 => apiDelete<void>(`/users/${userId}/block`),
+  follow:                (userId: number)                  => apiPost<string>(`/users/${userId}/follow`),
+  unfollow:              (userId: number)                  => apiDelete<void>(`/users/${userId}/follow`),
+  getFollowers:          (userId: number, page = 0, size = 20) => apiGet<PageResponse<UserSummaryDTO>>(`/users/${userId}/followers`, { page, size }),
+  getFollowing:          (userId: number, page = 0, size = 20) => apiGet<PageResponse<UserSummaryDTO>>(`/users/${userId}/following`, { page, size }),
+  block:                 (userId: number)                  => apiPost<void>(`/users/${userId}/block`),
+  unblock:               (userId: number)                  => apiDelete<void>(`/users/${userId}/block`),
+  getBlockedUsers:       ()                                => apiGet<UserSummaryDTO[]>('/users/me/blocked'),
+  updatePrivacy:         (isPrivate: boolean)              => apiPut<UserResponse>('/users/me', { isPrivate }),
+  getFollowRequests:     ()                                => apiGet<FollowRequestItem[]>('/users/follow-requests'),
+  acceptFollowRequest:   (requestId: number)               => apiPost<void>(`/users/follow-requests/${requestId}/accept`),
+  rejectFollowRequest:   (requestId: number)               => apiDelete<void>(`/users/follow-requests/${requestId}`),
+  verifyAddress:         ()                                => apiPost<void>('/users/me/verify-address'),
+  verifyIdentity:        ()                                => apiPost<void>('/users/me/verify-identity'),
 };
 
 // ─── POSTS — /api/v1/posts/* ─────────────────────────────────────────────────
@@ -149,6 +157,7 @@ export const chatApi = {
   getHistory:     (roomId: number, page = 0, size = 30)                             => apiGet<PageResponse<ChatMessageResponse>>(`/chat/rooms/${roomId}/messages`, { page, size }),
   sendMessage:    (roomId: number, d: SendMessageRequest)                            => apiPost<ChatMessageResponse>(`/chat/rooms/${roomId}/messages`, d),
   deleteMessage:  (roomId: number, messageId: number)                                => apiDelete<void>(`/chat/rooms/${roomId}/messages/${messageId}`),
+  unsendMessage:  (roomId: number, messageId: number)                                => apiPost<ChatMessageResponse>(`/chat/rooms/${roomId}/messages/${messageId}/unsend`),
   markRead:       (roomId: number)                                                   => apiPost<void>(`/chat/rooms/${roomId}/read`),
   roomUnread:     (roomId: number)                                                   => apiGet<number>(`/chat/rooms/${roomId}/unread-count`),
 };
@@ -221,6 +230,16 @@ export const borrowApi = {
   respond:        (id: number)                                                       => apiPost<BorrowRequestResponse>(`/borrow-requests/${id}/respond`),
   close:          (id: number)                                                       => apiPost<void>(`/borrow-requests/${id}/close`),
   delete:         (id: number)                                                       => apiDelete<void>(`/borrow-requests/${id}`),
+};
+
+// ─── STORIES — /api/v1/stories/* ─────────────────────────────────────────────
+export const storiesApi = {
+  create:     (d: CreateStoryRequest)  => apiPost<StoryResponse>('/stories', d),
+  getMyStories: ()                     => apiGet<StoryResponse[]>('/stories/me'),
+  getFeed:    ()                       => apiGet<StoryResponse[]>('/stories/feed'),
+  getUser:    (userId: number)         => apiGet<StoryResponse[]>(`/stories/user/${userId}`),
+  markViewed: (storyId: number)        => apiPost<void>(`/stories/${storyId}/view`),
+  delete:     (storyId: number)        => apiDelete<void>(`/stories/${storyId}`),
 };
 
 // ─── RECOMMENDATIONS — /api/v1/recommendations/* ─────────────────────────────

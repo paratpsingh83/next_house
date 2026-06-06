@@ -16,6 +16,7 @@ public class ChatMessageResponseDTO {
     private String message;
     private String mediaUrl;
     private Boolean isDeleted;
+    private Boolean isUnsent;
     private LocalDateTime editedAt;
 
     private UserSummaryDTO sender;

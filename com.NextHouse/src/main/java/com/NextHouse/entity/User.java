@@ -7,48 +7,6 @@ import lombok.experimental.SuperBuilder;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/**
- * FIX: User was "extends BaseEntity".
- *
- * MUST be "extends GeoBaseEntity" because these service methods call
- * geo setters/getters that do not exist on BaseEntity:
- *
- *   UserServiceImpl.updateLocation():
- *     user.setLatitude()   ← COMPILE ERROR without GeoBaseEntity
- *     user.setLongitude()  ← COMPILE ERROR
- *     user.setAddress()    ← COMPILE ERROR
- *     user.setCity()       ← COMPILE ERROR
- *     user.setState()      ← COMPILE ERROR
- *     user.setZipCode()    ← COMPILE ERROR
- *     user.setLocation()   ← COMPILE ERROR
- *
- *   UserServiceImpl.updateProfile():
- *     user.setLocation()   ← COMPILE ERROR
- *
- *   AuthServiceImpl.register():
- *     user.setLatitude()   ← COMPILE ERROR
- *     user.setLongitude()  ← COMPILE ERROR
- *     user.setLocation()   ← COMPILE ERROR
- *
- *   PostServiceImpl.getNearbyFeed():
- *     u.getLatitude()      ← COMPILE ERROR
- *
- *   RecommendationServiceImpl.resolveNeighborhoodId():
- *     u.getLatitude() != null  ← COMPILE ERROR
- *
- * GeoBaseEntity adds: latitude, longitude, address, city, state,
- * country, zipCode, location (geography(Point,4326))
- *
- * DB: Add these columns to the `users` table in your Flyway V2 migration:
- *   latitude   DOUBLE PRECISION,
- *   longitude  DOUBLE PRECISION,
- *   address    VARCHAR(500),
- *   city       VARCHAR(100),
- *   state      VARCHAR(100),
- *   country    VARCHAR(100),
- *   zip_code   VARCHAR(20),
- *   location   geography(Point, 4326)
- */
 @Entity
 @Table(
         name = "users",
@@ -124,6 +82,10 @@ public class User extends GeoBaseEntity {   // ← FIX: was "extends BaseEntity"
     @Builder.Default
     @Column(name = "two_factor_enabled", nullable = false)
     private Boolean twoFactorEnabled = false;
+
+    @Builder.Default
+    @Column(name = "is_private", nullable = false)
+    private Boolean isPrivate = false;
 
     @Column(name = "last_location_updated_at")
     private LocalDateTime lastLocationUpdatedAt;

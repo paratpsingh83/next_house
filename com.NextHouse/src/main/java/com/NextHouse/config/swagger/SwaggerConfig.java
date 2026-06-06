@@ -107,8 +107,10 @@ public class SwaggerConfig {
                 new Tag().name("Safety Alerts").description("Local safety and emergency alerts"),
                 new Tag().name("Search").description("Global search, autocomplete, trending keywords"),
                 new Tag().name("Neighborhoods").description("Neighborhood detection and assignment"),
+                new Tag().name("Stories").description("24-hour ephemeral stories — Instagram/WhatsApp style"),
+                new Tag().name("Recommendations").description("AI-powered personalised post, activity, community, and user recommendations"),
                 new Tag().name("Media").description("File upload and media management"),
-                new Tag().name("Admin").description("Admin-only: user management, moderation, reports"),
+                new Tag().name("Admin").description("Admin-only: user management, moderation, reports, and platform analytics"),
                 new Tag().name("Moderation").description("Content moderation queue (Admin + Moderator)")
             ))
 

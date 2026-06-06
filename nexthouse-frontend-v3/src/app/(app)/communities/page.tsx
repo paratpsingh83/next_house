@@ -34,7 +34,13 @@ export default function CommunitiesPage() {
       </div>
       {tab==='discover'&&<div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search communities..." className="input pl-9 text-sm"/></div>}
       {active.isLoading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary-500" size={28}/></div>}
-      {!active.isLoading&&items.length===0&&<div className="text-center py-16 text-gray-400"><Users size={40} className="mx-auto mb-3 opacity-30"/><p>{tab==='mine'?'You haven\'t joined any groups yet':'No communities found'}</p></div>}
+      {active.isError && !active.isLoading && (
+        <div className="card p-6 text-center">
+          <p className="text-sm font-semibold text-red-500 mb-2">Failed to load communities</p>
+          <button onClick={() => active.refetch()} className="text-xs text-primary-600 font-medium underline">Try again</button>
+        </div>
+      )}
+      {!active.isLoading&&!active.isError&&items.length===0&&<div className="text-center py-16 text-gray-400"><Users size={40} className="mx-auto mb-3 opacity-30"/><p>{tab==='mine'?'You haven\'t joined any groups yet':'No communities found'}</p></div>}
       <div className="space-y-3">
         {items.map(c=>(
           <Link key={c.id} href={`/communities/${c.id}`}>

@@ -61,30 +61,11 @@ public interface UserMapper {
     UserResponseDTO toResponse(User user);
 
     /** User → lightweight embed for other DTOs (post author, chat sender, etc.) */
-    @Mapping(target = "online", ignore = true)
+    @Mapping(target = "online",       ignore = true)
+    @Mapping(target = "isFollowing",  ignore = true)
+    @Mapping(target = "isRequested",  ignore = true)
     UserSummaryDTO toSummary(User user);
 
-    /**
-     * Partial profile update.
-     *
-     * FIX: Geo fields from UpdateProfileRequestDTO (latitude, longitude, address,
-     *      city, state, country, zipCode) are EXPLICITLY IGNORED here.
-     *
-     * WHY: These fields exist on UpdateProfileRequestDTO AND on User (via GeoBaseEntity).
-     *      MapStruct would auto-map them, which would be WRONG because:
-     *        1. location (PostGIS Point) must be rebuilt by geoUtils.buildPoint()
-     *           whenever lat/lon change — MapStruct cannot do this.
-     *        2. UserServiceImpl.updateProfile() handles geo separately:
-     *             if (dto.getLatitude() != null && dto.getLongitude() != null) {
-     *               user.setLocation(geoUtils.buildPoint(...));  ← rebuilds PostGIS point
-     *               user.setLastLocationUpdatedAt(now);
-     *             }
-     *        3. updateLocation() is the dedicated endpoint for location updates.
-     *           updateProfile() should only update profile fields (name, bio, etc.)
-     *           NOT silently overwrite lat/lon without updating the PostGIS Point.
-     *
-     * Sensitive fields (password, role, banned) always ignored regardless of DTO.
-     */
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id",                    ignore = true)
     @Mapping(target = "password",              ignore = true)
@@ -99,7 +80,6 @@ public interface UserMapper {
     @Mapping(target = "phoneNumber",           ignore = true)
     @Mapping(target = "email",                 ignore = true)
     @Mapping(target = "username",              ignore = true)
-    // FIX: Geo fields explicitly ignored — service handles them with PostGIS rebuild
     @Mapping(target = "latitude",              ignore = true)
     @Mapping(target = "longitude",             ignore = true)
     @Mapping(target = "address",               ignore = true)

@@ -14,25 +14,6 @@ import org.mapstruct.*;
 )
 public interface PostMapper {
 
-    /**
-     * FIX: Removed DUPLICATE @Mapping on target="status".
-     *
-     * Original code had BOTH:
-     *   @Mapping(target = "status", constant = "PUBLISHED")  ← line 1  REMOVE THIS
-     *   @Mapping(target = "status", ignore = true)           ← line 2  KEEP THIS
-     *
-     * Two @Mapping annotations targeting the same field =
-     * MapStruct compile error:
-     *   "Duplicate @Mapping for target property 'status'"
-     *
-     * KEPT:    ignore = true
-     *          (PostServiceImpl.createPost() sets post.setStatus(PostStatus.PUBLISHED) explicitly)
-     * REMOVED: constant = "PUBLISHED" line
-     *
-     * NOTE: Post.status is PostStatus enum, not String.
-     * The constant "PUBLISHED" would attempt String→PostStatus conversion
-     * which MapStruct does support, but the duplicate target is the compile blocker.
-     */
     @Mapping(target = "id",           ignore = true)
     @Mapping(target = "status",       ignore = true)  // service sets PostStatus.PUBLISHED
     @Mapping(target = "likeCount",    constant = "0")

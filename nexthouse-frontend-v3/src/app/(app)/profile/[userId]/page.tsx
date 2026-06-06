@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import { ArrowLeft, Loader2, UserCheck, UserPlus, MessageCircle, MapPin, Shield, Settings, MoreHorizontal, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, UserCheck, UserPlus, MessageCircle, MapPin, Shield, Settings, MoreHorizontal, Users, Clock, BadgeCheck } from 'lucide-react';
 import { usersApi, postsApi, chatApi } from '@/api';
 import type { UserResponse } from '@/types';
 import PostCard from '@/components/post/PostCard';
@@ -22,8 +22,10 @@ export default function ProfilePage() {
   const me           = useAppSelector(s => s.auth.user);
   const uId          = Number(userId);
   const [tab,          setTab]          = useState<Tab>('posts');
-  const [isFollowing,  setIsFollowing]  = useState<boolean | null>(null);
-  const [followLoading,setFollowLoading]= useState(false);
+  const [isFollowing,    setIsFollowing]    = useState<boolean | null>(null);
+  const [isRequested,    setIsRequested]    = useState<boolean | null>(null);
+  const [followLoading,  setFollowLoading]  = useState(false);
+  const [showUnfollowDlg,setShowUnfollowDlg]= useState(false);
 
   // ── User profile ──────────────────────────────────────────────────────────
   // FIX: removed onSuccess (deprecated in React Query v5)
@@ -33,10 +35,11 @@ export default function ProfilePage() {
     queryFn:  () => usersApi.getProfile(uId),
   });
 
-  // Sync isFollowing when user data loads
+  // Sync follow state when user data loads
   useEffect(() => {
     if (user && isFollowing === null) {
       setIsFollowing(user.isFollowing ?? false);
+      setIsRequested(user.isRequested ?? false);
     }
   }, [user]);
 
@@ -69,22 +72,40 @@ export default function ProfilePage() {
   }, [inView, postsQ.hasNextPage, postsQ.isFetchingNextPage]);
 
   const posts    = postsQ.data?.pages.flatMap((p: any) => p.content) ?? [];
-  const isSelf   = me?.id === uId;
-  const following= isFollowing ?? user?.isFollowing ?? false;
+  const isSelf    = me?.id === uId;
+  const following = isFollowing ?? user?.isFollowing ?? false;
+  const requested = isRequested ?? user?.isRequested ?? false;
 
   // ── Follow / Unfollow ─────────────────────────────────────────────────────
-  const handleFollow = async () => {
+  const handleFollow = () => {
+    if (following) { setShowUnfollowDlg(true); return; }
+    if (requested)  { toast('Follow request already sent', { icon: '⏳' }); return; }
+    doFollow();
+  };
+
+  const doFollow = async () => {
     setFollowLoading(true);
     try {
-      if (following) {
-        await usersApi.unfollow(uId);
-        setIsFollowing(false);
-        toast('Unfollowed');
+      const status = await usersApi.follow(uId);
+      if (status === 'REQUESTED') {
+        setIsRequested(true);
+        toast('Follow request sent', { icon: '⏳' });
       } else {
-        await usersApi.follow(uId);
         setIsFollowing(true);
         toast.success('Following!');
       }
+      qc.invalidateQueries({ queryKey: ['user', uId] });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Failed');
+    } finally { setFollowLoading(false); }
+  };
+
+  const doUnfollow = async () => {
+    setShowUnfollowDlg(false);
+    setFollowLoading(true);
+    try {
+      await usersApi.unfollow(uId);
+      setIsFollowing(false);
       qc.invalidateQueries({ queryKey: ['user', uId] });
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed');
@@ -182,16 +203,18 @@ export default function ProfilePage() {
               onClick={handleFollow}
               disabled={followLoading}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm transition ${
-                following
-                  ? 'border-2 border-gray-200 text-gray-700 hover:bg-gray-50'
-                  : 'bg-primary-500 text-white hover:bg-primary-600'
+                following  ? 'border-2 border-gray-200 text-gray-700 hover:bg-gray-50'
+                : requested? 'border-2 border-gray-200 text-gray-500'
+                :            'bg-primary-500 text-white hover:bg-primary-600'
               }`}
             >
               {followLoading
                 ? <Loader2 size={16} className="animate-spin"/>
-                : following ? <UserCheck size={16}/> : <UserPlus size={16}/>
+                : following  ? <UserCheck size={16}/>
+                : requested  ? <Clock size={16}/>
+                :              <UserPlus size={16}/>
               }
-              {following ? 'Following' : 'Follow'}
+              {following ? 'Following' : requested ? 'Requested' : 'Follow'}
             </button>
             <button
               onClick={openChat}
@@ -203,11 +226,20 @@ export default function ProfilePage() {
         )}
 
         {isSelf && (
-          <Link href="/settings/profile">
-            <div className="mt-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-700 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-gray-50 transition">
-              <Settings size={16}/>Edit Profile
-            </div>
-          </Link>
+          <div className="mt-4 flex gap-2">
+            <Link href="/settings/profile" className="flex-1">
+              <div className="py-2.5 rounded-xl border-2 border-gray-200 text-gray-700 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-gray-50 transition">
+                <Settings size={16}/>Edit Profile
+              </div>
+            </Link>
+            {(!user.addressVerified || !user.identityVerified) && (
+              <Link href="/settings/verification">
+                <div className="py-2.5 px-4 rounded-xl border-2 border-primary-200 text-primary-600 text-sm font-semibold flex items-center gap-2 hover:bg-primary-50 transition">
+                  <BadgeCheck size={16}/>Verify
+                </div>
+              </Link>
+            )}
+          </div>
         )}
       </div>
 
@@ -289,6 +321,26 @@ export default function ProfilePage() {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* Unfollow confirmation modal */}
+      {showUnfollowDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-base font-bold text-gray-900 mb-2">Unfollow?</h3>
+            <p className="text-sm text-gray-500 mb-5">Do you want to unfollow {user.name}?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowUnfollowDlg(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">
+                Cancel
+              </button>
+              <button onClick={doUnfollow}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition">
+                Unfollow
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
