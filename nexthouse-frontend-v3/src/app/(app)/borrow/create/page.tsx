@@ -1,11 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowLeft, Loader2, Package } from 'lucide-react';
-import { borrowApi } from '@/api';
+import { borrowApi, neighborhoodsApi } from '@/api';
 import toast from 'react-hot-toast';
 
 const ITEM_TYPES = ['TOOL', 'APPLIANCE', 'VEHICLE', 'BOOK', 'SPORTS', 'ELECTRONICS', 'OTHER'];
@@ -24,6 +24,21 @@ type Form = z.infer<typeof schema>;
 export default function CreateBorrowPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [neighborhoodId, setNeighborhoodId] = useState<number | undefined>();
+
+  // Detect neighborhood from GPS silently — best effort
+  useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const n = await neighborhoodsApi.detect(coords.latitude, coords.longitude);
+          if (n?.id) setNeighborhoodId(n.id);
+        } catch {}
+      },
+      () => {},
+      { timeout: 5000 }
+    );
+  }, []);
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
@@ -36,9 +51,10 @@ export default function CreateBorrowPage() {
     setLoading(true);
     try {
       await borrowApi.create({
-        title: d.title,
-        description: d.description,
+        title:            d.title,
+        description:      d.description,
         requiredDuration: d.durationDays ? `${d.durationDays} days` : undefined,
+        neighborhoodId,   // passes detected neighborhood (or undefined = global)
       });
       toast.success('Borrow request posted!');
       router.back();

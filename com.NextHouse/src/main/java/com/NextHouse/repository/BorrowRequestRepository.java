@@ -17,7 +17,11 @@ public interface BorrowRequestRepository extends JpaRepository<BorrowRequest, Lo
     @Query("""
             SELECT b FROM BorrowRequest b
             WHERE b.isDeleted = false
-              AND b.neighborhood.id = :neighborhoodId
+              AND (
+                  :neighborhoodId IS NULL
+                  OR b.neighborhood.id = :neighborhoodId
+                  OR b.neighborhood IS NULL
+              )
               AND (:status IS NULL OR b.status = :status)
             ORDER BY b.createdAt DESC
             """)
