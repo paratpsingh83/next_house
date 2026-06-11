@@ -42,6 +42,8 @@ public interface NotificationService {
 
     void notifyActivityReminder(Long userId, Long activityId, String activityTitle);
 
+    void notifyBorrowResponse(User responder, Long requestId, String requestTitle, Long requesterId);
+
     NotificationPreferenceDTO getPreferences(Long userId);
 
     NotificationPreferenceDTO updatePreferences(Long userId, NotificationPreferenceDTO dto);

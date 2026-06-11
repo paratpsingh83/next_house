@@ -295,6 +295,19 @@ public class NotificationServiceImpl implements NotificationService {
         );
     }
 
+    @Override
+    public void notifyBorrowResponse(User responder, Long requestId, String requestTitle, Long requesterId) {
+        sendNotification(
+            requesterId,
+            responder.getId(),
+            "BORROW_RESPONSE",
+            responder.getName() + " can help!",
+            responder.getName() + " offered to help with your request: \"" + requestTitle + "\"",
+            "BORROW_REQUEST", requestId,
+            "/borrow"
+        );
+    }
+
     // ─── Notification Preferences ─────────────────────────────────────────────
 
     @Override

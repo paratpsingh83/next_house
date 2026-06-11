@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
-import { Loader2, PlusCircle, Package, XCircle, MapPin } from 'lucide-react';
-import { borrowApi, neighborhoodsApi } from '@/api';
+import { Loader2, PlusCircle, Package, XCircle, MapPin, MessageCircle } from 'lucide-react';
+import { borrowApi, neighborhoodsApi, chatApi } from '@/api';
 import { useAppSelector } from '@/store';
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -23,8 +24,10 @@ export default function BorrowPage() {
   const [tab, setTab] = useState<Tab>('nearby');
   const [loc, setLoc] = useState<{ lat: number; lon: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
+  const [connectingId, setConnectingId] = useState<number | null>(null);
   const me = useAppSelector(s => s.auth.user);
   const qc = useQueryClient();
+  const router = useRouter();
 
   useEffect(() => {
     navigator.geolocation?.getCurrentPosition(
@@ -198,7 +201,7 @@ export default function BorrowPage() {
                 <span>{formatDistanceToNow(new Date(req.createdAt), { addSuffix: true })}</span>
               </div>
 
-              {/* Actions — close only for owner, respond for others */}
+              {/* Actions */}
               {req.status === 'OPEN' && (
                 <div className="flex gap-2 pt-2 border-t border-gray-50">
                   {isOwner ? (
@@ -226,6 +229,65 @@ export default function BorrowPage() {
                   )}
                 </div>
               )}
+
+              {/* IN_PROGRESS: show connect button for requester and helper; badge for others */}
+              {req.status === 'IN_PROGRESS' && req.respondedBy && (() => {
+                const isHelper = me?.id === req.respondedBy?.id;
+                const chatTargetId = isOwner
+                  ? req.respondedBy.id
+                  : isHelper
+                    ? req.requester?.id
+                    : null;
+
+                if (chatTargetId) {
+                  const targetUser = isOwner ? req.respondedBy : req.requester;
+                  return (
+                    <div className="flex items-center gap-2 pt-2 border-t border-gray-50">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-1 min-w-0">
+                        <div className="w-5 h-5 rounded-full bg-blue-100 flex-shrink-0 flex items-center justify-center">
+                          {targetUser?.profileImage
+                            ? <img src={targetUser.profileImage} className="w-full h-full object-cover rounded-full" alt=""/>
+                            : <span className="text-blue-600 font-bold text-[9px]">{targetUser?.name?.[0] ?? '?'}</span>
+                          }
+                        </div>
+                        <span className="truncate">
+                          {isOwner ? `${req.respondedBy.name} is helping` : `Helping ${req.requester?.name ?? ''}`}
+                        </span>
+                      </div>
+                      <button
+                        disabled={connectingId === req.id}
+                        onClick={async () => {
+                          setConnectingId(req.id);
+                          try {
+                            const room = await chatApi.directRoom(chatTargetId);
+                            router.push(`/chat/${room.id}`);
+                          } catch {
+                            toast.error('Could not open chat');
+                          } finally {
+                            setConnectingId(null);
+                          }
+                        }}
+                        className="flex items-center gap-1 text-xs text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition disabled:opacity-50 flex-shrink-0"
+                      >
+                        {connectingId === req.id
+                          ? <Loader2 size={12} className="animate-spin"/>
+                          : <MessageCircle size={12}/>
+                        }
+                        Chat
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="pt-2 border-t border-gray-50">
+                    <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"/>
+                      Someone is helping
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

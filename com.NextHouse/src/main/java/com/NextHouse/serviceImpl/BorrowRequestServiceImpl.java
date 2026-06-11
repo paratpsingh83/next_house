@@ -9,6 +9,7 @@ import com.NextHouse.exception.*;
 import com.NextHouse.mapper.BorrowRequestMapper;
 import com.NextHouse.repository.*;
 import com.NextHouse.service.BorrowRequestService;
+import com.NextHouse.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -41,7 +42,8 @@ public class BorrowRequestServiceImpl implements BorrowRequestService {
     private final CommunityRepository       communityRepository;
     private final NeighborhoodRepository    neighborhoodRepository;
 
-    private final BorrowRequestMapper borrowRequestMapper;
+    private final BorrowRequestMapper   borrowRequestMapper;
+    private final NotificationService   notificationService;
 
     // ─── Create ───────────────────────────────────────────────────────────────
 
@@ -122,6 +124,15 @@ public class BorrowRequestServiceImpl implements BorrowRequestService {
 
         BorrowRequest saved = requestRepository.save(request);
         log.info("[Borrow] Request id={} responded to by userId={}", requestId, currentUserId);
+
+        // Notify the requester — they can then open a DM with the responder
+        notificationService.notifyBorrowResponse(
+            responder,
+            requestId,
+            request.getTitle(),
+            request.getRequester().getId()
+        );
+
         return borrowRequestMapper.toResponse(saved);
     }
 
