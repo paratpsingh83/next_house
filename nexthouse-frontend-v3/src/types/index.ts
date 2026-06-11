@@ -72,6 +72,7 @@ export interface OtpVerifyRequest {
   email?: string;
   otp: string;
   purpose: string;
+  twoFactorToken?: string;
 }
 
 export interface ForgotPasswordRequest {
@@ -114,11 +115,13 @@ export interface UserResponse {
   gender?: string;
   dob?: string;
   address?: string;
+  role: string;
   verificationStatus: string;
   accountStatus: string;
   trustScore: number;
   addressVerified: boolean;
   identityVerified: boolean;
+  kycName?: string;
   online?: boolean;
   lastSeen?: string;
   followerCount?: number;
@@ -191,6 +194,7 @@ export interface StoryResponse {
 
 export interface CreateStoryRequest {
   mediaUrl?:        string;
+  mediaId?:         number;
   mediaType:        StoryMediaType;
   textContent?:     string;
   backgroundColor?: string;
@@ -232,6 +236,7 @@ export interface PostResponse {
   isLiked?: boolean;
   isSaved?: boolean;
   myReactionType?: string;
+  originalPost?: PostResponse;
   createdAt: string;
   updatedAt: string;
 }
@@ -400,6 +405,12 @@ export interface ChatRoomResponse {
   createdAt: string;
 }
 
+export interface MessageReactionSummary {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 export interface ChatMessageResponse {
   id: number;
   messageType: string;
@@ -411,6 +422,7 @@ export interface ChatMessageResponse {
   sender: UserSummaryDTO;
   replyToMessageId?: number;
   replyToPreview?: string;
+  reactions?: MessageReactionSummary[];
   createdAt: string;
 }
 
@@ -443,6 +455,18 @@ export interface NotificationResponse {
   createdAt: string;
 }
 
+export interface NotificationPreferences {
+  likes:          boolean;
+  comments:       boolean;
+  follows:        boolean;
+  followRequests: boolean;
+  messages:       boolean;
+  activities:     boolean;
+  marketplace:    boolean;
+  safetyAlerts:   boolean;
+  communities:    boolean;
+}
+
 // ─── Marketplace ──────────────────────────────────────────────────────────────
 export interface MarketplaceItemResponse {
   id: number;
@@ -464,6 +488,27 @@ export interface MarketplaceItemResponse {
   neighborhood?: NeighborhoodSummaryDTO;
   media?: MediaFileResponse[];
   createdAt: string;
+}
+
+export interface SellerReviewResponse {
+  id: number;
+  itemId: number;
+  itemTitle: string;
+  reviewer: UserSummaryDTO;
+  rating: number;
+  comment?: string;
+  createdAt: string;
+}
+
+export interface SellerRatingSummary {
+  averageRating: number;
+  totalReviews:  number;
+  reviewedByMe:  boolean;
+}
+
+export interface CreateReviewRequest {
+  rating:   number;
+  comment?: string;
 }
 
 export interface CreateMarketplaceItemRequest {

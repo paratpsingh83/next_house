@@ -1,0 +1,208 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# nexthouse-pgbouncer.yaml
+# PgBouncer — PostgreSQL Connection Pooler
+#
+# Architecture:
+#   Spring Boot pods (20 × 20 conn = 400) → PgBouncer (2 replicas)
+#                                          → PostgreSQL (25 real connections)
+#
+# Pool mode: transaction
+#   DB connection released after each transaction commit/rollback.
+#   Allows hundreds of app connections to share a small PostgreSQL pool.
+#   Requires JDBC URL: ?prepareThreshold=0 (server-side prepared stmts disabled)
+#
+# Auth: scram-sha-256 via auth_query
+#   PgBouncer asks PostgreSQL to verify credentials — no password hashes stored
+#   separately. Requires SECURITY DEFINER function in PostgreSQL (see below).
+# ══════════════════════════════════════════════════════════════════════════════
+
+---
+# ── ConfigMap — pgbouncer.ini ─────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: pgbouncer
+data:
+  pgbouncer.ini: |
+    [databases]
+    * = host=postgres-service.nexthouse.svc.cluster.local port=5432
+
+    [pgbouncer]
+    listen_addr                = 0.0.0.0
+    listen_port                = 5432
+
+    # auth_query: PgBouncer asks PostgreSQL to verify passwords.
+    # The pgbouncer_auth_func must exist in the database (see README / init SQL).
+    # CREATE OR REPLACE FUNCTION pgbouncer.get_auth(p_usename TEXT)
+    #   RETURNS TABLE(username TEXT, password TEXT) SECURITY DEFINER
+    #   LANGUAGE SQL AS
+    #   $$ SELECT usename::TEXT, passwd::TEXT FROM pg_shadow WHERE usename = p_usename; $$;
+    auth_type                  = scram-sha-256
+    auth_user                  = nexthouse
+    auth_query                 = SELECT username, password FROM pgbouncer.get_auth($1)
+    auth_file                  = /etc/pgbouncer/userlist.txt
+
+    pool_mode                  = transaction
+    max_client_conn            = 2000
+    default_pool_size          = 25
+    min_pool_size              = 5
+    reserve_pool_size          = 10
+    reserve_pool_timeout       = 3.0
+
+    server_idle_timeout        = 600.0
+    client_idle_timeout        = 0
+    query_timeout              = 0
+    client_login_timeout       = 15.0
+
+    server_reset_query         = DISCARD ALL
+    server_reset_query_always  = 0
+
+    ignore_startup_parameters  = extra_float_digits,search_path
+
+    log_connections            = 0
+    log_disconnections         = 0
+    log_pooler_errors          = 1
+    stats_period               = 60
+
+    admin_users                = nexthouse
+
+---
+# ── Service ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer-service
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: pgbouncer
+spec:
+  selector:
+    app.kubernetes.io/component: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+
+---
+# ── Deployment ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexthouse-pgbouncer
+  namespace: nexthouse
+  labels:
+    app.kubernetes.io/name: nexthouse
+    app.kubernetes.io/component: pgbouncer
+spec:
+  replicas: 2      # 2 replicas for HA — PgBouncer is stateless, safe to scale
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: pgbouncer
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexthouse
+        app.kubernetes.io/component: pgbouncer
+
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      # Spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: pgbouncer
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: pgbouncer
+          image: pgbouncer/pgbouncer:1.22.1
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: pgbouncer
+              containerPort: 5432
+              protocol: TCP
+
+          # ── Resources ──────────────────────────────────────────────────────
+          # PgBouncer is extremely lightweight — mostly CPU for TLS + auth
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "64Mi"
+            limits:
+              cpu:    "500m"
+              memory: "256Mi"
+
+          # ── Volume mounts ──────────────────────────────────────────────────
+          volumeMounts:
+            - name: pgbouncer-config
+              mountPath: /etc/pgbouncer/pgbouncer.ini
+              subPath: pgbouncer.ini
+              readOnly: true
+            - name: pgbouncer-userlist
+              mountPath: /etc/pgbouncer/userlist.txt
+              subPath: userlist.txt
+              readOnly: true
+
+          # ── Probes ─────────────────────────────────────────────────────────
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+
+          # ── Security ───────────────────────────────────────────────────────
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70       # pgbouncer default uid
+            runAsGroup: 70
+            readOnlyRootFilesystem: false   # PgBouncer writes pid file
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: pgbouncer-config
+          configMap:
+            name: pgbouncer-config
+        - name: pgbouncer-userlist
+          secret:
+            # Create this secret:
+            # kubectl create secret generic pgbouncer-userlist \
+            #   --from-literal=userlist.txt='"nexthouse" "SCRAM-SHA-256$<hash>"' \
+            #   -n nexthouse
+            #
+            # Generate SCRAM hash:
+            # psql -c "SELECT concat('SCRAM-SHA-256$', encode(digest(concat('scram-sha-256$', 'your-password'), 'sha256'), 'base64'))"
+            # Or simpler: connect psql as superuser and run:
+            #   SELECT pg_shadow.passwd FROM pg_shadow WHERE usename = 'nexthouse';
+            secretName: pgbouncer-userlist
+
+      securityContext:
+        fsGroup: 70

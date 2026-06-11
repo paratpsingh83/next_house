@@ -25,5 +25,6 @@ public class NearbySearchRequestDTO {
      */
     @Min(100)
     @Max(50000)
+    @Builder.Default
     private int radiusMeters = 5000;
 }

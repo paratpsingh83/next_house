@@ -1,10 +1,12 @@
 package com.NextHouse.config;
 
 import com.NextHouse.security.jwt.JwtTokenProvider;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.event.EventListener;
+import org.springframework.core.env.Environment;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -18,59 +20,27 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
-import org.springframework.web.socket.messaging.SessionConnectedEvent;
-import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
  * WebSocketConfig
- * <p>
- * Configures STOMP over WebSocket for real-time features:
- * - Chat messaging
- * - Typing indicators
- * - Presence (online/offline)
- * - Notifications
- * - Live activity updates
- * <p>
- * Connection flow:
- * 1. Client connects to ws://host/ws?token={jwt}  (or sets Authorization header).
- * 2. JwtChannelInterceptor validates the JWT on CONNECT frame.
- * 3. Sets the UsernamePasswordAuthenticationToken as the session principal.
- * 4. Spring Security principal is now available in all @MessageMapping handlers.
- * <p>
- * Destination prefixes:
- * /app/{path}            → @MessageMapping handlers (client sends TO server)
- * /topic/{path}          → Broadcast (server sends TO all subscribers)
- * /user/{userId}/queue/{path} → Unicast (server sends TO specific user)
- * <p>
- * Client subscriptions:
- * /user/queue/notifications     → personal notification bell
- * /user/queue/presence          → followers' presence changes
- * /topic/rooms/{roomId}/messages → group/direct chat
- * /topic/rooms/{roomId}/typing  → typing indicators
- * /topic/presence/{userId}      → specific user's online status
- * <p>
- * In-memory broker:
- * Currently using Spring's in-memory broker (SimpleBroker).
- * For production scale (multi-node): switch to a full message broker:
  *
- * @Override public void configureMessageBroker(MessageBrokerRegistry registry) {
- * registry.enableStompBrokerRelay("/topic", "/queue")
- * .setRelayHost("rabbitmq-host")
- * .setRelayPort(61613)
- * .setClientLogin("guest")
- * .setClientPasscode("guest");
- * }
- * <p>
- * This enables WebSocket state to survive server restarts and work across
- * multiple pods (horizontal scaling).
- * <p>
- * Maven dependency:
- * <dependency>
- * <groupId>org.springframework.boot</groupId>
- * <artifactId>spring-boot-starter-websocket</artifactId>
- * </dependency>
+ * Endpoints:
+ *   /ws         → SockJS (web browsers via @stomp/stompjs + sockjs-client)
+ *   /ws-native  → raw WebSocket (mobile via @stomp/stompjs brokerURL, no SockJS)
+ *
+ * Broker:
+ *   Dev  (RABBITMQ_HOST not set) → in-memory SimpleBroker, single-node only
+ *   Prod (RABBITMQ_HOST set)     → StompBrokerRelay → RabbitMQ STOMP plugin
+ *                                  Messages survive restarts, work across all HPA pods
+ *
+ * Destinations:
+ *   /app/**                    → @MessageMapping handlers
+ *   /topic/**                  → broadcast
+ *   /queue/**                  → unicast
+ *   /user/{id}/queue/**        → user-specific unicast
  */
 @Slf4j
 @Configuration
@@ -79,11 +49,41 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final Environment      environment;
 
-    // ─── Endpoint registration ────────────────────────────────────────────────
+    @Value("${app.rabbitmq.stomp.host:}")
+    private String rabbitHost;
+
+    @Value("${app.rabbitmq.stomp.port:61613}")
+    private int rabbitPort;
+
+    @Value("${app.rabbitmq.stomp.login:guest}")
+    private String rabbitLogin;
+
+    @Value("${app.rabbitmq.stomp.passcode:guest}")
+    private String rabbitPasscode;
+
+    @PostConstruct
+    public void logBrokerMode() {
+        if (rabbitHost.isBlank()) {
+            boolean isDev = Arrays.asList(environment.getActiveProfiles()).contains("dev");
+            if (!isDev) {
+                log.warn("[WebSocket] Using in-memory SimpleBroker — RABBITMQ_HOST not set. " +
+                         "With HPA minReplicas>1, subscribers on Pod A will NOT receive messages " +
+                         "published on Pod B. Set RABBITMQ_HOST to enable the STOMP broker relay.");
+            } else {
+                log.info("[WebSocket] SimpleBroker active (dev mode)");
+            }
+        } else {
+            log.info("[WebSocket] StompBrokerRelay active → {}:{}", rabbitHost, rabbitPort);
+        }
+    }
+
+    // ─── Endpoints ────────────────────────────────────────────────────────────
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Web: SockJS fallback for browsers
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(
                         "https://nexthouse.app",
@@ -92,39 +92,44 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://localhost:3001",
                         "http://localhost:8080"
                 )
-                .withSockJS();  // SockJS fallback for browsers that don't support WebSocket
+                .withSockJS();
+
+        // Mobile: raw WebSocket — React Native does not support SockJS
+        registry.addEndpoint("/ws-native")
+                .setAllowedOriginPatterns("*");
     }
 
-    // ─── Message broker ───────────────────────────────────────────────────────
+    // ─── Broker ───────────────────────────────────────────────────────────────
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // Client sends messages to destinations prefixed with /app
         registry.setApplicationDestinationPrefixes("/app");
-
-        // Server sends messages to /topic (broadcast) and /queue (unicast)
-        registry.enableSimpleBroker("/topic", "/queue");
-
-        // For /user/{userId}/queue/{dest} routing — must match SimpMessagingTemplate usage
         registry.setUserDestinationPrefix("/user");
+
+        if (!rabbitHost.isBlank()) {
+            // Production: relay to RabbitMQ (requires rabbitmq_stomp plugin enabled)
+            registry.enableStompBrokerRelay("/topic", "/queue")
+                    .setRelayHost(rabbitHost)
+                    .setRelayPort(rabbitPort)
+                    .setClientLogin(rabbitLogin)
+                    .setClientPasscode(rabbitPasscode)
+                    .setSystemLogin(rabbitLogin)
+                    .setSystemPasscode(rabbitPasscode)
+                    .setSystemHeartbeatSendInterval(10_000)
+                    .setSystemHeartbeatReceiveInterval(10_000);
+        } else {
+            // Dev / single-node: in-memory broker
+            registry.enableSimpleBroker("/topic", "/queue");
+        }
     }
 
-    // ─── Channel interceptor (JWT auth on CONNECT) ────────────────────────────
+    // ─── JWT channel interceptor ──────────────────────────────────────────────
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(new JwtChannelInterceptor(jwtTokenProvider));
     }
 
-    // ─── JWT Channel Interceptor ──────────────────────────────────────────────
-
-    /**
-     * Validates the JWT on every STOMP CONNECT frame.
-     * Sets the Spring Security principal so @MessageMapping methods can inject it.
-     * <p>
-     * Token location: STOMP header  Authorization: Bearer {token}
-     * or query param: ws://host/ws?token={jwt}  (extracted from native headers)
-     */
     @RequiredArgsConstructor
     static class JwtChannelInterceptor implements ChannelInterceptor {
 
@@ -141,64 +146,26 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 String token = extractToken(accessor);
 
                 if (token != null && jwtTokenProvider.isValid(token)) {
-                    Long userId = jwtTokenProvider.extractUserId(token);
-                    String role = jwtTokenProvider.extractRole(token);
+                    Long   userId = jwtTokenProvider.extractUserId(token);
+                    String role   = jwtTokenProvider.extractRole(token);
 
-                    UsernamePasswordAuthenticationToken auth =
-                            new UsernamePasswordAuthenticationToken(
-                                    userId.toString(),
-                                    null,
-                                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                            );
+                    accessor.setUser(new UsernamePasswordAuthenticationToken(
+                            userId.toString(), null,
+                            List.of(new SimpleGrantedAuthority("ROLE_" + role))));
 
-                    accessor.setUser(auth);
                     log.debug("[WS] CONNECT authenticated: userId={}", userId);
                 } else {
                     log.warn("[WS] CONNECT rejected — invalid or missing token");
-                    // Return null to refuse the connection
                     return null;
                 }
             }
-
             return message;
         }
 
         private String extractToken(StompHeaderAccessor accessor) {
-            // 1. Authorization header: Bearer {token}
-            String authHeader = accessor.getFirstNativeHeader("Authorization");
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                return authHeader.substring(7);
-            }
-
-            // 2. token query param (SockJS fallback): ws://host/ws?token={jwt}
-            String tokenParam = accessor.getFirstNativeHeader("token");
-            if (tokenParam != null && !tokenParam.isBlank()) {
-                return tokenParam;
-            }
-
+            String auth = accessor.getFirstNativeHeader("Authorization");
+            if (auth != null && auth.startsWith("Bearer ")) return auth.substring(7);
             return null;
         }
     }
-
-    // ─── Session lifecycle events ─────────────────────────────────────────────
-
-    /**
-     * These @EventListener methods are defined here for documentation but in practice
-     * should live in UserPresenceEventListener (a dedicated @Component) so they can
-     * inject UserPresenceService without circular dependencies.
-     *
-     * @Component
-     * class UserPresenceEventListener {
-     *     @EventListener
-     *     public void handleConnect(SessionConnectedEvent event) {
-     *         // Extract userId from event.getUser().getName()
-     *         // Call userPresenceService.markOnline(userId, socketId, deviceType)
-     *     }
-     *
-     *     @EventListener
-     *     public void handleDisconnect(SessionDisconnectEvent event) {
-     *         // Call userPresenceService.markOffline(userId)
-     *     }
-     * }
-     */
 }

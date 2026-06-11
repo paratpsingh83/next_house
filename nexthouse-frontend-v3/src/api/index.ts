@@ -15,8 +15,9 @@ import type {
   CommunityResponse, CreateCommunityRequest,
   NeighborhoodSummaryDTO,
   ChatRoomResponse, ChatMessageResponse, SendMessageRequest, CreateChatRoomRequest,
-  NotificationResponse,
+  NotificationResponse, NotificationPreferences,
   MarketplaceItemResponse, CreateMarketplaceItemRequest,
+  SellerReviewResponse, SellerRatingSummary, CreateReviewRequest,
   SafetyAlertResponse, CreateSafetyAlertRequest,
   BorrowRequestResponse, CreateBorrowRequest,
   MediaFileResponse, SearchResultDTO,
@@ -32,14 +33,14 @@ export const authApi = {
   logoutAll:      ()                         => apiPost<void>('/auth/logout-all'),
   refreshToken:   (d: RefreshTokenRequest)   => apiPost<TokenResponse>('/auth/refresh-token', d),
   requestOtp:     (d: OtpRequest)            => apiPost<void>('/auth/otp/request', d),
-  verifyOtp:      (d: OtpVerifyRequest)      => apiPost<void>('/auth/otp/verify', d),
+  verifyOtp:      (d: OtpVerifyRequest)      => apiPost<string | null>('/auth/otp/verify', d),
   forgotPassword: (d: ForgotPasswordRequest) => apiPost<void>('/auth/password/forgot', d),
   resetPassword:  (d: ResetPasswordRequest)  => apiPost<void>('/auth/password/reset', d),
   changePassword: (d: ChangePasswordRequest) => apiPost<void>('/auth/password/change', d),
   oauth2Login:    (d: OAuth2LoginRequest)    => apiPost<AuthResponse>('/auth/oauth2', d),
   enable2FA:      ()                         => apiPost<void>('/auth/2fa/enable'),
   disable2FA:     ()                         => apiPost<void>('/auth/2fa/disable'),
-  verify2FA:      (otp: string)              => apiPost<AuthResponse>(`/auth/2fa/verify?otp=${encodeURIComponent(otp)}`),
+  verify2FA:      (twoFactorToken: string, otp: string) => apiPost<AuthResponse>(`/auth/2fa/verify?twoFactorToken=${encodeURIComponent(twoFactorToken)}&otp=${encodeURIComponent(otp)}`),
 };
 
 // ─── USERS — /api/v1/users/* ─────────────────────────────────────────────────
@@ -67,6 +68,17 @@ export const usersApi = {
   verifyIdentity:        (docType: string, mediaId: number) => apiPost<void>('/users/me/verify-identity', { docType, mediaId }),
 };
 
+// ─── VERIFICATION — /api/v1/verification/* ───────────────────────────────────
+export const verificationApi = {
+  verifyKyc: (idPhoto: File, selfie: File) => {
+    const form = new FormData();
+    form.append('idPhoto', idPhoto);
+    form.append('selfie', selfie);
+    return apiUpload<{ identityVerified: boolean; trustScoreAdded: number }>('/verification/identity/kyc', form);
+  },
+  getDigiLockerUrl: () => apiGet<{ url: string }>('/verification/address/digilocker/init'),
+};
+
 // ─── POSTS — /api/v1/posts/* ─────────────────────────────────────────────────
 export const postsApi = {
   create:         (d: CreatePostRequest)                                            => apiPost<PostResponse>('/posts', d),
@@ -91,6 +103,7 @@ export const postsApi = {
   unsave:         (postId: number)                                                  => apiDelete<void>(`/posts/${postId}/save`),
   savedPosts:     (collection?: string, page = 0, size = 20)                       => apiGet<PageResponse<PostResponse>>('/posts/saved', { collection, page, size }),
   share:          (postId: number)                                                  => apiPost<void>(`/posts/${postId}/share`),
+  repost:         (postId: number, content?: string)                               => apiPost<PostResponse>(`/posts/${postId}/repost`, { content }),
   report:         (postId: number, reason: string, description?: string)            => apiPost<void>(`/posts/${postId}/report`, { reason, description }),
 
   // Comments
@@ -131,9 +144,10 @@ export const communitiesApi = {
   join:           (id: number)                                                       => apiPost<void>(`/communities/${id}/join`),
   leave:          (id: number)                                                       => apiDelete<void>(`/communities/${id}/join`),
   getMembers:     (id: number, role?: string, page = 0, size = 20)                  => apiGet<PageResponse<UserSummaryDTO>>(`/communities/${id}/members`, { role, page, size }),
-  approveMember:  (communityId: number, memberId: number)                            => apiPost<void>(`/communities/${communityId}/members/${memberId}/approve`),
-  kickMember:     (communityId: number, memberId: number)                            => apiDelete<void>(`/communities/${communityId}/members/${memberId}`),
-  updateRole:     (communityId: number, memberId: number, role: string)              => apiPatch<void>(`/communities/${communityId}/members/${memberId}/role?role=${role}`),
+  approveMember:     (communityId: number, memberId: number)                         => apiPost<void>(`/communities/${communityId}/members/${memberId}/approve`),
+  kickMember:        (communityId: number, memberId: number)                         => apiDelete<void>(`/communities/${communityId}/members/${memberId}`),
+  updateRole:        (communityId: number, memberId: number, role: string)           => apiPatch<void>(`/communities/${communityId}/members/${memberId}/role?role=${role}`),
+  transferOwnership: (communityId: number, newOwnerUserId: number)                   => apiPost<void>(`/communities/${communityId}/transfer-ownership?newOwnerUserId=${newOwnerUserId}`),
 };
 
 // ─── NEIGHBORHOODS — /api/v1/neighborhoods/* ─────────────────────────────────
@@ -160,6 +174,7 @@ export const chatApi = {
   unsendMessage:  (roomId: number, messageId: number)                                => apiPost<ChatMessageResponse>(`/chat/rooms/${roomId}/messages/${messageId}/unsend`),
   markRead:       (roomId: number)                                                   => apiPost<void>(`/chat/rooms/${roomId}/read`),
   roomUnread:     (roomId: number)                                                   => apiGet<number>(`/chat/rooms/${roomId}/unread-count`),
+  react:          (roomId: number, messageId: number, emoji: string)                 => apiPost<ChatMessageResponse>(`/chat/rooms/${roomId}/messages/${messageId}/react`, { emoji }),
 };
 
 // ─── NOTIFICATIONS — /api/v1/notifications/* ─────────────────────────────────
@@ -169,6 +184,8 @@ export const notificationsApi = {
   markRead:       (id: number)                                                       => apiPost<void>(`/notifications/${id}/read`),
   markAllRead:    ()                                                                 => apiPost<void>('/notifications/read-all'),
   delete:         (id: number)                                                       => apiDelete<void>(`/notifications/${id}`),
+  getPreferences: ()                                                                 => apiGet<NotificationPreferences>('/notifications/preferences'),
+  updatePreferences: (prefs: NotificationPreferences)                               => apiPut<NotificationPreferences>('/notifications/preferences', prefs),
 };
 
 // ─── MARKETPLACE — /api/v1/marketplace/* ─────────────────────────────────────
@@ -178,10 +195,18 @@ export const marketplaceApi = {
   update:         (id: number, d: CreateMarketplaceItemRequest)                      => apiPut<MarketplaceItemResponse>(`/marketplace/${id}`, d),
   delete:         (id: number)                                                       => apiDelete<void>(`/marketplace/${id}`),
   markSold:       (id: number)                                                       => apiPatch<void>(`/marketplace/${id}/sold`),
-  nearby:         (lat: number, lon: number, radius = 10000, category?: string, minPrice?: number, maxPrice?: number, page = 0, size = 20) =>
-    apiGet<PageResponse<MarketplaceItemResponse>>('/marketplace/nearby', { latitude: lat, longitude: lon, radiusMeters: radius, category, minPrice, maxPrice, page, size }),
+  nearby:         (lat: number, lon: number, radius = 10000, category?: string, minPrice?: number, maxPrice?: number, page = 0, size = 20, q?: string) =>
+    apiGet<PageResponse<MarketplaceItemResponse>>('/marketplace/nearby', { latitude: lat, longitude: lon, radiusMeters: radius, category, minPrice, maxPrice, q: q || undefined, page, size }),
   mine:           (page = 0, size = 20)                                              => apiGet<PageResponse<MarketplaceItemResponse>>('/marketplace/my', { page, size }),
   search:         (query: string, page = 0, size = 20)                              => apiGet<PageResponse<MarketplaceItemResponse>>('/marketplace/search', { query, page, size }),
+};
+
+// ─── SELLER REVIEWS — /api/v1/marketplace/* ──────────────────────────────────
+export const reviewsApi = {
+  create:        (itemId: number, d: CreateReviewRequest)    => apiPost<SellerReviewResponse>(`/marketplace/items/${itemId}/reviews`, d),
+  getBySeller:   (sellerId: number, page = 0, size = 20)     => apiGet<PageResponse<SellerReviewResponse>>(`/marketplace/sellers/${sellerId}/reviews`, { page, size }),
+  getRatingSummary: (sellerId: number)                       => apiGet<SellerRatingSummary>(`/marketplace/sellers/${sellerId}/rating`),
+  delete:        (reviewId: number)                          => apiDelete<void>(`/marketplace/reviews/${reviewId}`),
 };
 
 // ─── SAFETY ALERTS — /api/v1/safety-alerts/* ─────────────────────────────────
@@ -192,6 +217,7 @@ export const safetyApi = {
   nearby:         (lat: number, lon: number, radius = 5000, page = 0, size = 20)    => apiGet<PageResponse<SafetyAlertResponse>>('/safety-alerts/nearby', { latitude: lat, longitude: lon, radiusMeters: radius, page, size }),
   resolve:        (id: number)                                                       => apiPost<void>(`/safety-alerts/${id}/resolve`),
   verify:         (id: number)                                                       => apiPost<void>(`/safety-alerts/${id}/verify`),
+  report:         (id: number, reason: string, description?: string)                => apiPost<void>(`/safety-alerts/${id}/report`, { reason, description }),
 };
 
 // ─── SEARCH — /api/v1/search/* ───────────────────────────────────────────────
@@ -227,7 +253,7 @@ export const borrowApi = {
   get:            (id: number)                                                       => apiGet<BorrowRequestResponse>(`/borrow-requests/${id}`),
   byNeighborhood: (neighborhoodId: number, status?: string, page = 0, size = 20)    => apiGet<PageResponse<BorrowRequestResponse>>(`/borrow-requests/neighborhood/${neighborhoodId}`, { status, page, size }),
   mine:           (page = 0, size = 20)                                              => apiGet<PageResponse<BorrowRequestResponse>>('/borrow-requests/my', { page, size }),
-  respond:        (id: number)                                                       => apiPost<BorrowRequestResponse>(`/borrow-requests/${id}/respond`),
+  respond:        (id: number, decision: 'ACCEPT' | 'REJECT')                        => apiPost<BorrowRequestResponse>(`/borrow-requests/${id}/respond`, { decision }),
   close:          (id: number)                                                       => apiPost<void>(`/borrow-requests/${id}/close`),
   delete:         (id: number)                                                       => apiDelete<void>(`/borrow-requests/${id}`),
 };
@@ -249,3 +275,42 @@ export const recommendationsApi = {
   communities:    (page = 0, size = 20) => apiGet<PageResponse<CommunityResponse>>('/recommendations/communities', { page, size }),
   users:          (page = 0, size = 20) => apiGet<PageResponse<UserSummaryDTO>>('/recommendations/users', { page, size }),
 };
+
+// ─── ADMIN — /api/v1/admin/* (ROLE_ADMIN only) ───────────────────────────────
+export const adminApi = {
+  getDashboard:        ()                                                                   => apiGet<Record<string, number>>('/admin/dashboard'),
+  getUsers:            (status?: string, banned?: boolean, page = 0, size = 20)            => apiGet<PageResponse<UserResponse>>('/admin/users', { status, banned, page, size }),
+  banUser:             (userId: number)                                                     => apiPost<void>(`/admin/users/${userId}/ban`),
+  unbanUser:           (userId: number)                                                     => apiPost<void>(`/admin/users/${userId}/unban`),
+  deleteUser:          (userId: number)                                                     => apiDelete<void>(`/admin/users/${userId}`),
+  getModerationQueue:  (contentType?: string, page = 0, size = 20)                         => apiGet<PageResponse<ModerationQueueItem>>('/admin/moderation', { contentType, page, size }),
+  approveContent:      (queueId: number, note?: string)                                    => apiPost<void>(`/admin/moderation/${queueId}/approve${note ? `?note=${encodeURIComponent(note)}` : ''}`),
+  blockContent:        (queueId: number, note?: string)                                    => apiPost<void>(`/admin/moderation/${queueId}/block${note ? `?note=${encodeURIComponent(note)}` : ''}`),
+  getReports:          (status?: string, entityType?: string, page = 0, size = 20)         => apiGet<PageResponse<ReportItem>>('/admin/reports', { status, entityType, page, size }),
+  reviewReport:        (reportId: number, decision: string, note?: string)                 => apiPost<void>(`/admin/reports/${reportId}/review?decision=${encodeURIComponent(decision)}${note ? `&note=${encodeURIComponent(note)}` : ''}`),
+  verifyNeighborhood:  (neighborhoodId: number)                                            => apiPost<void>(`/admin/neighborhoods/${neighborhoodId}/verify`),
+};
+
+// Inline types for admin (not yet in shared types)
+export interface ModerationQueueItem {
+  id: number;
+  contentType: string;
+  contentId: number;
+  contentPreview?: string;
+  reportedBy?: UserSummaryDTO;
+  status: string;
+  createdAt: string;
+}
+
+export interface ReportItem {
+  id: number;
+  entityType: string;
+  entityId: number;
+  reason: string;
+  description?: string;
+  status: string;
+  reporter?: UserSummaryDTO;
+  reviewer?: UserSummaryDTO;
+  reviewNote?: string;
+  createdAt: string;
+}

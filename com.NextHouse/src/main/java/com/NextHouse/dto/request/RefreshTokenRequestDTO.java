@@ -1,6 +1,5 @@
 package com.NextHouse.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
 @Getter
@@ -10,7 +9,7 @@ import lombok.*;
 @AllArgsConstructor
 public class RefreshTokenRequestDTO {
 
-    @NotBlank(message = "Refresh token is required")
+    // Optional — web clients supply via nh_refresh httpOnly cookie; mobile clients send in body
     private String refreshToken;
 
     private String deviceId;

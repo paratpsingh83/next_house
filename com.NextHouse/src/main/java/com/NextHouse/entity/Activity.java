@@ -66,6 +66,10 @@ public class Activity extends CommunityScopedEntity {
             foreignKey = @ForeignKey(name = "fk_activity_host_user"))
     private User hostUser;
 
+    @Builder.Default
+    @Column(name = "reminder_sent", nullable = false)
+    private Boolean reminderSent = false;
+
     @Version
     @Column(name = "version")
     private Long version;

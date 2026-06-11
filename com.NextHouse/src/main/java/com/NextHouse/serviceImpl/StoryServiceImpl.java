@@ -12,6 +12,7 @@ import com.NextHouse.mapper.UserMapper;
 import com.NextHouse.repository.StoryRepository;
 import com.NextHouse.repository.StoryViewRepository;
 import com.NextHouse.repository.UserRepository;
+import com.NextHouse.service.MediaService;
 import com.NextHouse.service.StoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -32,6 +34,7 @@ public class StoryServiceImpl implements StoryService {
     private final StoryViewRepository storyViewRepository;
     private final UserRepository      userRepository;
     private final UserMapper          userMapper;
+    private final MediaService        mediaService;
 
     @Override
     @Transactional
@@ -46,7 +49,13 @@ public class StoryServiceImpl implements StoryService {
                 .expiresAt(LocalDateTime.now().plusHours(24))
                 .viewCount(0)
                 .build();
-        return toDto(storyRepository.save(story), false, currentUserId);
+        Story saved = storyRepository.save(story);
+
+        if (dto.getMediaId() != null) {
+            mediaService.attachMediaToEntity(List.of(dto.getMediaId()), "STORY", saved.getId());
+        }
+
+        return toDto(saved, false, currentUserId);
     }
 
     @Override

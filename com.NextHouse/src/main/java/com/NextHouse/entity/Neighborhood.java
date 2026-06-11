@@ -2,9 +2,13 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.locationtech.jts.geom.Polygon;
 
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 @Entity
 @Table(
         name = "neighborhoods",
@@ -47,6 +51,7 @@ public class Neighborhood extends GeoBaseEntity {
     @Column(name = "population")
     private Integer population;
 
+    @Builder.Default
     @Column(name = "verified", nullable = false)
     private Boolean verified = false;
 }

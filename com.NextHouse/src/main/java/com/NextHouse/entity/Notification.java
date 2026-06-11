@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -43,12 +44,15 @@ public class Notification extends BaseEntity {
     @Column(name = "reference_id")
     private Long referenceId;
 
+    @Builder.Default
     @Column(name = "is_read", nullable = false)
     private Boolean read = false;
 
+    @Builder.Default
     @Column(name = "push_sent", nullable = false)
     private Boolean pushSent = false;
 
+    @Builder.Default
     @Column(name = "websocket_sent", nullable = false)
     private Boolean websocketSent = false;
 

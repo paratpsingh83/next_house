@@ -22,6 +22,7 @@ public class CreateSafetyAlertRequestDTO {
     @NotBlank(message = "Severity is required")
     private String severity;
 
+    @Builder.Default
     private Boolean emergency = false;
     private Long communityId;
     private Long neighborhoodId;

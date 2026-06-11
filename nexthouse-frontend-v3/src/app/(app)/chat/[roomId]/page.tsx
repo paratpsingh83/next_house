@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
@@ -51,7 +51,10 @@ export default function ChatRoomPage() {
     initialPageParam: 0,
   });
 
-  const messages = data?.pages.flatMap(p => p.content).reverse() ?? [];
+  const messages = useMemo(
+    () => data?.pages.flatMap(p => p.content).reverse() ?? [],
+    [data]
+  );
 
   const { ref: topRef, inView: topInView } = useInView({ threshold: 0.1 });
   useEffect(() => {
@@ -127,6 +130,11 @@ export default function ChatRoomPage() {
     }
   }, [text, rId, replyTo]);
 
+  const sendImage = useCallback((mediaUrl: string) => {
+    if (!wsClient.isConnected()) { toast.error('Not connected. Please wait…'); return; }
+    wsClient.sendMessage(rId, { messageType: 'IMAGE', mediaUrl });
+  }, [rId]);
+
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
@@ -167,6 +175,22 @@ export default function ChatRoomPage() {
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Cannot unsend');
     }
+  };
+
+  const handleReact = async (messageId: number, emoji: string) => {
+    try {
+      const updated = await chatApi.react(rId, messageId, emoji);
+      qc.setQueryData<InfiniteData<PageResponse<ChatMessageResponse>>>(
+        ['chat', 'history', rId],
+        old => !old ? old : {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            content: page.content.map(m => m.id === updated.id ? { ...m, reactions: updated.reactions } : m),
+          })),
+        }
+      );
+    } catch { toast.error('Failed to react'); }
   };
 
   const typingNames = typingUsers
@@ -246,6 +270,7 @@ export default function ChatRoomPage() {
                 onReply={(id, preview) => setReplyTo({ id, preview })}
                 onUnsend={unsend}
                 onDelete={deleteForMe}
+                onReact={handleReact}
               />
             </div>
           );
@@ -259,6 +284,7 @@ export default function ChatRoomPage() {
         text={text}
         onChange={handleTextChange}
         onSend={send}
+        onSendImage={sendImage}
         onKeyDown={handleKey}
         sending={sending}
         replyTo={replyTo}

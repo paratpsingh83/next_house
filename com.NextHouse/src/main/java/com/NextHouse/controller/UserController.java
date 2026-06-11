@@ -36,9 +36,10 @@ public class UserController {
     // ─── Profile ──────────────────────────────────────────────────────────────
 
     @GetMapping("/me")
-    @PreAuthorize("isAuthenticated()")
+    @SecurityRequirements
     @Operation(summary = "Get my profile", description = "Returns the full profile of the currently authenticated user.")
     public ResponseEntity<ApiResponseDTO<UserResponseDTO>> getMyProfile(@CurrentUser Long currentUserId) {
+        if (currentUserId == null) return ResponseEntity.status(401).body(ApiResponseDTO.error("Not authenticated"));
         return ResponseEntity.ok(ApiResponseDTO.success(userService.getMyProfile(currentUserId)));
     }
 

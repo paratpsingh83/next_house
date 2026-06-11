@@ -2,8 +2,10 @@ package com.NextHouse.controller;
 
 import com.NextHouse.dto.common.ApiResponseDTO;
 import com.NextHouse.dto.common.PageResponseDTO;
+import com.NextHouse.dto.response.NotificationPreferenceDTO;
 import com.NextHouse.dto.response.NotificationResponseDTO;
 import com.NextHouse.security.CurrentUser;
+import jakarta.validation.Valid;
 import com.NextHouse.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -65,5 +67,22 @@ public class NotificationController {
             @CurrentUser Long currentUserId) {
         notificationService.deleteNotification(notificationId, currentUserId);
         return ResponseEntity.ok(ApiResponseDTO.success("Notification deleted"));
+    }
+
+    @GetMapping("/preferences")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Get notification preferences")
+    public ResponseEntity<ApiResponseDTO<NotificationPreferenceDTO>> getPreferences(
+            @CurrentUser Long currentUserId) {
+        return ResponseEntity.ok(ApiResponseDTO.success(notificationService.getPreferences(currentUserId)));
+    }
+
+    @PutMapping("/preferences")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Update notification preferences")
+    public ResponseEntity<ApiResponseDTO<NotificationPreferenceDTO>> updatePreferences(
+            @CurrentUser Long currentUserId,
+            @Valid @RequestBody NotificationPreferenceDTO dto) {
+        return ResponseEntity.ok(ApiResponseDTO.success(notificationService.updatePreferences(currentUserId, dto)));
     }
 }

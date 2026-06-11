@@ -1,5 +1,6 @@
 package com.NextHouse.repository;
 
+import com.NextHouse.dto.projection.UserStatsProjection;
 import com.NextHouse.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -126,6 +127,42 @@ public interface UserRepository extends JpaRepository<User, Long> {
             ORDER BY u.trustScore DESC, u.createdAt DESC
             """)
     Page<User> findPopularUsers(@Param("currentUserId") Long currentUserId, Pageable pageable);
+
+    // ─── Profile stats aggregate ──────────────────────────────────────────────
+
+    @Query(value = """
+            SELECT
+                (SELECT COUNT(*) FROM follows WHERE following_id = :userId AND is_deleted = false)  AS follower_count,
+                (SELECT COUNT(*) FROM follows WHERE follower_id  = :userId AND is_deleted = false)  AS following_count,
+                up.online,
+                up.last_seen,
+                CASE WHEN CAST(:viewerId AS BIGINT) IS NULL OR CAST(:viewerId AS BIGINT) = :userId THEN false
+                     ELSE EXISTS(SELECT 1 FROM follows
+                                 WHERE follower_id = CAST(:viewerId AS BIGINT) AND following_id = :userId
+                                   AND is_deleted = false)
+                END AS is_following,
+                CASE WHEN CAST(:viewerId AS BIGINT) IS NULL OR CAST(:viewerId AS BIGINT) = :userId THEN false
+                     ELSE EXISTS(SELECT 1 FROM follows
+                                 WHERE follower_id = :userId AND following_id = CAST(:viewerId AS BIGINT)
+                                   AND is_deleted = false)
+                END AS is_followed_by,
+                CASE WHEN CAST(:viewerId AS BIGINT) IS NULL OR CAST(:viewerId AS BIGINT) = :userId THEN false
+                     ELSE EXISTS(SELECT 1 FROM blocked_users
+                                 WHERE user_id = CAST(:viewerId AS BIGINT) AND blocked_user_id = :userId
+                                   AND is_deleted = false)
+                END AS is_blocked,
+                CASE WHEN CAST(:viewerId AS BIGINT) IS NULL OR CAST(:viewerId AS BIGINT) = :userId THEN false
+                     ELSE EXISTS(SELECT 1 FROM follow_requests
+                                 WHERE requester_id = CAST(:viewerId AS BIGINT) AND target_id = :userId
+                                   AND is_deleted = false)
+                END AS is_requested
+            FROM users u
+            LEFT JOIN user_presence up ON up.user_id = :userId
+            WHERE u.id = :userId
+            """, nativeQuery = true)
+    UserStatsProjection findUserStats(@Param("userId") Long userId, @Param("viewerId") Long viewerId);
+
+    Optional<User> findByDigilockerState(String digilockerState);
 
     @Modifying
     @Query("UPDATE User u SET u.banned = true WHERE u.id IN :ids")

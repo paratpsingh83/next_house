@@ -1,6 +1,7 @@
 package com.NextHouse.serviceImpl;
 
 import com.NextHouse.dto.common.PageResponseDTO;
+import com.NextHouse.dto.response.NotificationPreferenceDTO;
 import com.NextHouse.dto.response.NotificationResponseDTO;
 import com.NextHouse.entity.*;
 import com.NextHouse.exception.ForbiddenException;
@@ -41,11 +42,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
-    private final NotificationRepository notificationRepository;
-    private final UserRepository         userRepository;
-    private final UserPresenceRepository presenceRepository;
-    private final DeviceTokenRepository  deviceTokenRepository;
-    private final NotificationMapper     notificationMapper;
+    private final NotificationRepository           notificationRepository;
+    private final NotificationPreferenceRepository preferenceRepository;
+    private final UserRepository                   userRepository;
+    private final UserPresenceRepository           presenceRepository;
+    private final DeviceTokenRepository            deviceTokenRepository;
+    private final NotificationMapper               notificationMapper;
 
     // STOMP broker relay — sends to a specific user's queue
     private final SimpMessagingTemplate messagingTemplate;
@@ -121,6 +123,12 @@ public class NotificationServiceImpl implements NotificationService {
         User receiver = userRepository.findById(receiverId).orElse(null);
         if (receiver == null || receiver.getIsDeleted()) {
             log.warn("[Notification] Receiver not found: {}", receiverId);
+            return;
+        }
+
+        // Check user's notification preferences — skip if muted
+        if (isMuted(receiverId, type)) {
+            log.debug("[Notification] Muted by prefs: userId={} type={}", receiverId, type);
             return;
         }
 
@@ -273,5 +281,76 @@ public class NotificationServiceImpl implements NotificationService {
             "USER", acceptor.getId(),
             "/profile/" + acceptor.getId()
         );
+    }
+
+    @Override
+    public void notifyActivityReminder(Long userId, Long activityId, String activityTitle) {
+        sendNotification(
+            userId, null,
+            "ACTIVITY_REMINDER",
+            "Activity starting soon",
+            activityTitle + " starts in about 1 hour",
+            "ACTIVITY", activityId,
+            "/activities/" + activityId
+        );
+    }
+
+    // ─── Notification Preferences ─────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public NotificationPreferenceDTO getPreferences(Long userId) {
+        NotificationPreference prefs = preferenceRepository.findByUserId(userId)
+                .orElseGet(() -> NotificationPreference.builder()
+                        .user(userRepository.findById(userId)
+                                .orElseThrow(() -> new NotFoundException("User not found")))
+                        .build());
+        return toDTO(prefs);
+    }
+
+    @Override
+    @Transactional
+    public NotificationPreferenceDTO updatePreferences(Long userId, NotificationPreferenceDTO dto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        NotificationPreference prefs = preferenceRepository.findByUserId(userId)
+                .orElse(NotificationPreference.builder().user(user).build());
+        prefs.setLikes(dto.isLikes());
+        prefs.setComments(dto.isComments());
+        prefs.setFollows(dto.isFollows());
+        prefs.setFollowRequests(dto.isFollowRequests());
+        prefs.setMessages(dto.isMessages());
+        prefs.setActivities(dto.isActivities());
+        prefs.setMarketplace(dto.isMarketplace());
+        prefs.setSafetyAlerts(dto.isSafetyAlerts());
+        prefs.setCommunities(dto.isCommunities());
+        prefs.setUpdatedAt(java.time.LocalDateTime.now());
+        return toDTO(preferenceRepository.save(prefs));
+    }
+
+    private boolean isMuted(Long userId, String type) {
+        NotificationPreference prefs = preferenceRepository.findByUserId(userId).orElse(null);
+        if (prefs == null) return false;
+        return switch (type) {
+            case "LIKE", "REACTION"                                             -> !prefs.getLikes();
+            case "COMMENT", "COMMENT_REPLY"                                     -> !prefs.getComments();
+            case "FOLLOW"                                                        -> !prefs.getFollows();
+            case "FOLLOW_REQUEST", "FOLLOW_REQUEST_ACCEPTED"                    -> !prefs.getFollowRequests();
+            case "MESSAGE"                                                       -> !prefs.getMessages();
+            case "ACTIVITY_JOIN_REQUEST", "ACTIVITY_APPROVED", "ACTIVITY_REJECTED", "ACTIVITY_REMINDER" -> !prefs.getActivities();
+            case "SAFETY_ALERT"                                                  -> !prefs.getSafetyAlerts();
+            case "MARKETPLACE"                                                   -> !prefs.getMarketplace();
+            case "COMMUNITY_JOIN_REQUEST", "COMMUNITY_APPROVED", "COMMUNITY_ROLE_CHANGE" -> !prefs.getCommunities();
+            default -> false;
+        };
+    }
+
+    private NotificationPreferenceDTO toDTO(NotificationPreference p) {
+        return NotificationPreferenceDTO.builder()
+                .likes(p.getLikes()).comments(p.getComments()).follows(p.getFollows())
+                .followRequests(p.getFollowRequests()).messages(p.getMessages())
+                .activities(p.getActivities()).marketplace(p.getMarketplace())
+                .safetyAlerts(p.getSafetyAlerts()).communities(p.getCommunities())
+                .build();
     }
 }

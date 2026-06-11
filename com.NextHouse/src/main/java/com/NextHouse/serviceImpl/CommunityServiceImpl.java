@@ -68,6 +68,16 @@ public class CommunityServiceImpl implements CommunityService {
     public CommunityResponseDTO createCommunity(Long currentUserId, CreateCommunityRequestDTO dto) {
         User creator = findUserOrThrow(currentUserId);
 
+        if (Boolean.TRUE.equals(creator.getBanned())) {
+            throw new ForbiddenException("Banned users cannot create communities");
+        }
+        if (!"ACTIVE".equals(creator.getAccountStatus())) {
+            throw new ForbiddenException("Your account must be active to create a community");
+        }
+        if ("UNVERIFIED".equals(creator.getVerificationStatus())) {
+            throw new ForbiddenException("Please verify your account (phone or email) before creating a community");
+        }
+
         Community community = communityMapper.toEntity(dto);
         community.setCreatedBy(creator);
         community.setVerified(false);
@@ -236,12 +246,56 @@ public class CommunityServiceImpl implements CommunityService {
                 .orElseThrow(() -> new NotFoundException("Membership not found"));
 
         if (membership.getRole() == CommunityRole.OWNER) {
-            throw new ConflictException("Owner cannot leave. Transfer ownership or delete the community first.");
+            long totalMembers = communityRepository.countMembers(communityId);
+            if (totalMembers == 1) {
+                // Owner is the last member — auto-delete the community
+                Community community = findCommunityOrThrow(communityId);
+                community.setIsDeleted(true);
+                communityRepository.save(community);
+                membership.setIsDeleted(true);
+                memberRepository.save(membership);
+                log.info("[Community] Last owner left, communityId={} auto-deleted by userId={}", communityId, currentUserId);
+                return;
+            }
+            throw new ConflictException(
+                "You are the owner. Transfer ownership to another member before leaving, or delete the community.");
         }
 
         membership.setIsDeleted(true);
         memberRepository.save(membership);
         log.info("[Community] userId={} left communityId={}", currentUserId, communityId);
+    }
+
+    @Override
+    @Transactional
+    @CacheEvict(value = "community", key = "#communityId")
+    public void transferOwnership(Long communityId, Long newOwnerUserId, Long currentUserId) {
+        assertRole(communityId, currentUserId, CommunityRole.OWNER);
+
+        if (newOwnerUserId.equals(currentUserId)) {
+            throw new ConflictException("You are already the owner of this community");
+        }
+
+        CommunityMember newOwnerMembership = memberRepository
+                .findByCommunityIdAndUserId(communityId, newOwnerUserId)
+                .orElseThrow(() -> new NotFoundException("Target user is not a member of this community"));
+
+        if (Boolean.TRUE.equals(newOwnerMembership.getIsDeleted())) {
+            throw new NotFoundException("Target user is not an active member of this community");
+        }
+        if (!Boolean.TRUE.equals(newOwnerMembership.getApproved())) {
+            throw new ConflictException("Target user's membership is not yet approved");
+        }
+
+        CommunityMember currentOwnerMembership = memberRepository
+                .findByCommunityIdAndUserId(communityId, currentUserId)
+                .orElseThrow(() -> new NotFoundException("Owner membership not found"));
+
+        memberRepository.updateRole(currentOwnerMembership.getId(), CommunityRole.MEMBER);
+        memberRepository.updateRole(newOwnerMembership.getId(), CommunityRole.OWNER);
+
+        log.info("[Community] Ownership transferred: communityId={}, from userId={} to userId={}",
+                communityId, currentUserId, newOwnerUserId);
     }
 
     @Override

@@ -19,7 +19,6 @@ public class RegisterRequestDTO {
     @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "Username may only contain letters, digits, and underscores")
     private String username;
 
-    @NotBlank(message = "Phone number is required")
     @Pattern(regexp = "^\\+?[1-9]\\d{7,14}$", message = "Invalid phone number format")
     private String phoneNumber;
 

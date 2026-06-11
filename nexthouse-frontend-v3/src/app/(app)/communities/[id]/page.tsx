@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 import {
   ArrowLeft, Users, Lock, Globe, CheckCircle,
   Loader2, Settings, LogOut, UserCheck, UserPlus,
-  FileText, Shield, Crown, MoreHorizontal, Bell
+  FileText, Shield, Crown, Bell, X, ArrowRightLeft,
 } from 'lucide-react';
 import { communitiesApi, postsApi } from '@/api';
 import { useAppSelector } from '@/store';
@@ -17,6 +17,7 @@ import CreatePostModal from '@/components/post/CreatePostModal';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import type { UserSummaryDTO } from '@/types';
 
 type Tab = 'posts' | 'members' | 'about';
 
@@ -27,21 +28,19 @@ const ROLE_COLORS: Record<string, string> = {
   MEMBER:    'bg-gray-100 text-gray-600',
 };
 
-const ROLE_ICON: Record<string, React.ReactNode> = {
-  OWNER:     <Crown size={11} />,
-  ADMIN:     <Shield size={11} />,
-  MODERATOR: <Shield size={11} />,
-};
-
 export default function CommunityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
   const qc      = useQueryClient();
   const me      = useAppSelector(s => s.auth.user);
-  const [tab, setTab]           = useState<Tab>('posts');
-  const [showCreate, setCreate] = useState(false);
-  const [joining,   setJoining] = useState(false);
-  const [loc, setLoc]           = useState({ lat: 3.139, lon: 101.6869 });
+  const [tab, setTab]                   = useState<Tab>('posts');
+  const [showCreate, setCreate]         = useState(false);
+  const [joining, setJoining]           = useState(false);
+  const [deleting, setDeleting]         = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [selectedNewOwner, setSelectedNewOwner] = useState<UserSummaryDTO | null>(null);
+  const [loc, setLoc] = useState({ lat: 3.139, lon: 101.6869 });
   const communityId = Number(id);
 
   useEffect(() => {
@@ -82,7 +81,7 @@ export default function CommunityDetailPage() {
   const { data: membersData, isLoading: loadingMembers } = useQuery({
     queryKey: ['community-members', communityId],
     queryFn:  () => communitiesApi.getMembers(communityId, undefined, 0, 50),
-    enabled:  tab === 'members',
+    enabled:  tab === 'members' || showTransfer,
   });
   const members = membersData?.content ?? [];
 
@@ -112,6 +111,36 @@ export default function CommunityDetailPage() {
     } finally { setJoining(false); }
   };
 
+  // ── Delete community ──────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!confirm('Delete this community? This cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      await communitiesApi.delete(communityId);
+      toast.success('Community deleted');
+      router.replace('/communities');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Failed to delete');
+    } finally { setDeleting(false); }
+  };
+
+  // ── Transfer ownership ────────────────────────────────────────────────────
+  const handleTransfer = async () => {
+    if (!selectedNewOwner) return;
+    if (!confirm(`Transfer ownership to ${selectedNewOwner.name}? You will become a regular member.`)) return;
+    setTransferring(true);
+    try {
+      await communitiesApi.transferOwnership(communityId, selectedNewOwner.id);
+      toast.success(`Ownership transferred to ${selectedNewOwner.name}`);
+      setShowTransfer(false);
+      setSelectedNewOwner(null);
+      refetchCommunity();
+      qc.invalidateQueries({ queryKey: ['community-members', communityId] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Transfer failed');
+    } finally { setTransferring(false); }
+  };
+
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loadingCommunity) {
     return (
@@ -130,29 +159,29 @@ export default function CommunityDetailPage() {
     );
   }
 
-  const isOwner    = community.myRole === 'OWNER';
-  const isAdmin    = community.myRole === 'ADMIN' || isOwner;
-  const isMember   = community.isMember;
-  const isPending  = community.isPending;
+  const isOwner   = community.myRole === 'OWNER';
+  const isAdmin   = community.myRole === 'ADMIN' || isOwner;
+  const isMember  = community.isMember;
+  const isPending = community.isPending;
+
+  // Members eligible to receive ownership (excludes current owner)
+  const transferCandidates = members.filter(m => m.id !== me?.id);
 
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* ── Cover image + header ────────────────────────────────────────────── */}
+      {/* ── Cover image + header ─────────────────────────────────────────── */}
       <div className="relative">
-        {/* Cover */}
         <div className="h-36 bg-gradient-to-br from-primary-400 to-teal-500 relative overflow-hidden">
           {community.coverImage && (
             <img src={community.coverImage} className="w-full h-full object-cover" alt="" />
           )}
-          {/* Back button */}
           <button
             onClick={() => router.back()}
             className="absolute top-4 left-4 w-9 h-9 bg-black/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white"
           >
             <ArrowLeft size={18} />
           </button>
-          {/* Settings button for admin */}
           {isAdmin && (
             <Link
               href={`/communities/${communityId}/settings`}
@@ -163,7 +192,6 @@ export default function CommunityDetailPage() {
           )}
         </div>
 
-        {/* Community icon */}
         <div className="absolute left-4 -bottom-8">
           <div className="w-16 h-16 rounded-2xl bg-white shadow-lg overflow-hidden border-2 border-white flex items-center justify-center">
             {community.iconImage
@@ -174,7 +202,7 @@ export default function CommunityDetailPage() {
         </div>
       </div>
 
-      {/* ── Community info ──────────────────────────────────────────────────── */}
+      {/* ── Community info ─────────────────────────────────────────────────── */}
       <div className="pt-12 px-4 pb-4 bg-white border-b border-gray-100">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
@@ -187,6 +215,9 @@ export default function CommunityDetailPage() {
                 ? <span className="badge bg-gray-100 text-gray-600 gap-1"><Lock size={10} />Private</span>
                 : <span className="badge bg-green-50 text-green-600 gap-1"><Globe size={10} />Public</span>
               }
+              {isOwner && (
+                <span className="badge bg-yellow-50 text-yellow-700 gap-1"><Crown size={10} />Owner</span>
+              )}
             </div>
             <p className="text-sm text-gray-500 mt-0.5">
               {community.communityType} · {community.memberCount} members
@@ -200,7 +231,7 @@ export default function CommunityDetailPage() {
           </div>
         </div>
 
-        {/* ── Action buttons ────────────────────────────────────────────────── */}
+        {/* ── Action buttons ─────────────────────────────────────────────── */}
         <div className="flex gap-2 mt-4">
           {!isMember && !isPending && (
             <button
@@ -220,6 +251,7 @@ export default function CommunityDetailPage() {
             </button>
           )}
 
+          {/* Non-owner members can leave */}
           {isMember && !isOwner && (
             <button
               onClick={handleLeave}
@@ -231,6 +263,17 @@ export default function CommunityDetailPage() {
             </button>
           )}
 
+          {/* Owner sees Transfer Ownership instead of Leave */}
+          {isOwner && (
+            <button
+              onClick={() => setShowTransfer(true)}
+              className="flex-1 py-2.5 rounded-xl border-2 border-yellow-200 text-yellow-700 hover:bg-yellow-50 text-sm font-semibold flex items-center justify-center gap-2 transition"
+            >
+              <ArrowRightLeft size={16} />
+              Transfer Ownership
+            </button>
+          )}
+
           {isMember && (
             <button className="w-11 h-11 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition">
               <Bell size={18} />
@@ -239,7 +282,7 @@ export default function CommunityDetailPage() {
         </div>
       </div>
 
-      {/* ── Tabs ───────────────────────────────────────────────────────────── */}
+      {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <div className="flex bg-white border-b border-gray-100 sticky top-14 z-30">
         {([
           ['posts',   'Posts',   FileText],
@@ -261,12 +304,11 @@ export default function CommunityDetailPage() {
         ))}
       </div>
 
-      {/* ── Tab content ────────────────────────────────────────────────────── */}
+      {/* ── Tab content ───────────────────────────────────────────────────── */}
 
       {/* POSTS TAB */}
       {tab === 'posts' && (
         <div className="px-4 py-4 space-y-4">
-          {/* Create post button — only for members */}
           {isMember && me && (
             <button
               onClick={() => setCreate(true)}
@@ -341,7 +383,6 @@ export default function CommunityDetailPage() {
                   </div>
                   <p className="text-xs text-gray-400">@{member.username}</p>
                 </div>
-                {/* Role badge would come from member role — for now show trust score */}
                 <div className="flex items-center gap-1 text-xs text-gray-400">
                   <Shield size={11} />
                   {member.trustScore ?? 0}
@@ -350,7 +391,6 @@ export default function CommunityDetailPage() {
             </Link>
           ))}
 
-          {/* Admin pending requests section */}
           {isAdmin && (
             <div className="mt-6">
               <p className="section-title">Admin Actions</p>
@@ -429,7 +469,6 @@ export default function CommunityDetailPage() {
             </div>
           </div>
 
-          {/* Parent community */}
           {community.parentCommunity && (
             <div className="card p-4">
               <p className="section-title">Parent Community</p>
@@ -445,13 +484,107 @@ export default function CommunityDetailPage() {
             </div>
           )}
 
-          {/* Danger zone for owner */}
+          {/* Danger zone — OWNER only */}
           {isOwner && (
-            <div className="card p-4 border border-red-100">
+            <div className="card p-4 border border-red-100 space-y-3">
               <p className="section-title text-red-500">Danger Zone</p>
-              <button className="btn-danger w-full mt-3 py-2.5 text-sm">Delete Community</button>
+
+              <button
+                onClick={() => setShowTransfer(true)}
+                className="w-full py-2.5 rounded-xl border-2 border-yellow-200 text-yellow-700 hover:bg-yellow-50 text-sm font-semibold flex items-center justify-center gap-2 transition"
+              >
+                <ArrowRightLeft size={16} />
+                Transfer Ownership
+              </button>
+
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="btn-danger w-full py-2.5 text-sm flex items-center justify-center gap-2"
+              >
+                {deleting ? <Loader2 size={16} className="animate-spin" /> : null}
+                Delete Community
+              </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Transfer Ownership Modal ───────────────────────────────────────── */}
+      {showTransfer && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft size={18} className="text-yellow-600" />
+                <h2 className="font-bold text-gray-900">Transfer Ownership</h2>
+              </div>
+              <button
+                onClick={() => { setShowTransfer(false); setSelectedNewOwner(null); }}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="px-5 pt-3 pb-1 text-xs text-gray-500">
+              Select a member to become the new owner. You will be demoted to Member.
+            </p>
+
+            {/* Member list */}
+            <div className="overflow-y-auto flex-1 px-4 py-2 space-y-1">
+              {loadingMembers && (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="animate-spin text-primary-400" size={24} />
+                </div>
+              )}
+              {transferCandidates.length === 0 && !loadingMembers && (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  No other members to transfer to.
+                </div>
+              )}
+              {transferCandidates.map(member => (
+                <button
+                  key={member.id}
+                  onClick={() => setSelectedNewOwner(member)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition text-left ${
+                    selectedNewOwner?.id === member.id
+                      ? 'border-yellow-400 bg-yellow-50'
+                      : 'border-transparent hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-primary-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    {member.profileImage
+                      ? <img src={member.profileImage} className="w-full h-full object-cover" alt={member.name} />
+                      : <span className="text-primary-600 font-bold text-sm">{member.name[0]}</span>
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-gray-900 truncate">{member.name}</p>
+                    <p className="text-xs text-gray-400">@{member.username}</p>
+                  </div>
+                  {selectedNewOwner?.id === member.id && (
+                    <Crown size={16} className="text-yellow-500 flex-shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Confirm button */}
+            <div className="px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={handleTransfer}
+                disabled={!selectedNewOwner || transferring}
+                className="btn-primary w-full py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {transferring
+                  ? <><Loader2 size={16} className="animate-spin" /> Transferring…</>
+                  : <><Crown size={16} /> Transfer to {selectedNewOwner?.name ?? '…'}</>
+                }
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

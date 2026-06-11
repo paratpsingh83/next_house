@@ -114,7 +114,7 @@ export const wsClient = {
   },
 
   // Send a chat message → /app/chat/rooms/{roomId}/send
-  sendMessage(roomId: number, payload: { messageType?: string; message?: string; replyToMessageId?: number }): void {
+  sendMessage(roomId: number, payload: { messageType?: string; message?: string; replyToMessageId?: number; mediaUrl?: string }): void {
     if (client?.connected) client.publish({ destination: `/app/chat/rooms/${roomId}/send`, body: JSON.stringify(payload) });
   },
 

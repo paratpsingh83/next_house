@@ -71,6 +71,8 @@
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId><version>2.25.69</version></dependency>
         <dependency><groupId>io.lettuce</groupId><artifactId>lettuce-core</artifactId></dependency>
         <dependency><groupId>net.coobird</groupId><artifactId>thumbnailator</artifactId><version>0.4.20</version></dependency>
+        <!-- STOMP broker relay TCP client (needed for StompBrokerRelay → RabbitMQ) -->
+        <dependency><groupId>io.projectreactor.netty</groupId><artifactId>reactor-netty</artifactId></dependency>
 
         <!-- FIX: springdoc declared once -->
         <dependency>
@@ -80,9 +82,20 @@
         </dependency>
 
         <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId></dependency>
+        <!-- Aadhaar Offline XML — password-protected ZIP extraction -->
+        <dependency><groupId>net.lingala.zip4j</groupId><artifactId>zip4j</artifactId><version>2.11.5</version></dependency>
         <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId><scope>runtime</scope></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
+
+
+        <!-- Hibernate L2 cache: hibernate-jcache + Ehcache 3 jakarta (jakarta.cache compatible) -->
+        <dependency><groupId>org.hibernate.orm</groupId><artifactId>hibernate-jcache</artifactId></dependency>
+        <dependency>
+            <groupId>org.ehcache</groupId>
+            <artifactId>ehcache</artifactId>
+            <classifier>jakarta</classifier>
+        </dependency>
 
         <!-- FIX: Correct test dependencies only -->
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>

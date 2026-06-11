@@ -33,4 +33,6 @@ public interface ChatService {
     void removeMember(Long roomId, Long userId, Long currentUserId);
 
     void muteRoom(Long roomId, Long currentUserId, boolean muted);
+
+    ChatMessageResponseDTO reactToMessage(Long roomId, Long messageId, String emoji, Long currentUserId);
 }

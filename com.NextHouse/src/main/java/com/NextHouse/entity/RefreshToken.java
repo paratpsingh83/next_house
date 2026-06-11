@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -28,6 +29,7 @@ public class RefreshToken extends BaseEntity {
     @Column(name = "expiry_date", nullable = false)
     private LocalDateTime expiryDate;
 
+    @Builder.Default
     @Column(name = "revoked", nullable = false)
     private Boolean revoked = false;
 

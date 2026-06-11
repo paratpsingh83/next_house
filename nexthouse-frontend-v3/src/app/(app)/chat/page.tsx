@@ -1,9 +1,10 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, MessageCircle } from 'lucide-react';
+import { Loader2, MessageCircle, Users } from 'lucide-react';
 import { chatApi } from '@/api';
 import { useAppSelector } from '@/store';
 import ChatRoomRow from '@/components/chat/ChatRoomRow';
+import Link from 'next/link';
 
 export default function ChatPage() {
   const { data, isLoading } = useQuery({ queryKey: ['chat', 'inbox'], queryFn: () => chatApi.inbox() });
@@ -12,7 +13,16 @@ export default function ChatPage() {
 
   return (
     <div className="px-4 py-4">
-      <h1 className="text-xl font-bold text-gray-900 mb-4">Messages</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl font-bold text-gray-900">Messages</h1>
+        <Link
+          href="/chat/new-group"
+          className="flex items-center gap-1.5 text-sm font-semibold text-primary-600 hover:text-primary-700 transition"
+        >
+          <Users size={16}/>
+          New Group
+        </Link>
+      </div>
 
       {isLoading && (
         <div className="flex justify-center py-12">

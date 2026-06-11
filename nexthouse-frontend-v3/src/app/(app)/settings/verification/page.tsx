@@ -1,214 +1,23 @@
 'use client';
-import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft, MapPin, Shield, CheckCircle, Loader2,
-  AlertCircle, Upload, X, FileText, ChevronDown,
+  ArrowLeft, Shield, MapPin, CheckCircle, Loader2,
+  Camera, CreditCard, Lock, ChevronRight,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { usersApi, mediaApi } from '@/api';
-import type { UserResponse } from '@/types';
+import { usersApi, verificationApi } from '@/api';
 import { useAppDispatch } from '@/store';
 import { setUser } from '@/store/slices/authSlice';
 import toast from 'react-hot-toast';
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-const IDENTITY_DOC_TYPES = [
-  { value: 'AADHAAR',         label: 'Aadhaar Card' },
-  { value: 'PASSPORT',        label: 'Passport' },
-  { value: 'DRIVING_LICENSE', label: 'Driving License' },
-  { value: 'NATIONAL_ID',     label: 'National ID Card' },
-  { value: 'VOTER_ID',        label: 'Voter ID Card' },
-];
-
-const ADDRESS_DOC_TYPES = [
-  { value: 'UTILITY_BILL',       label: 'Electricity / Water Bill' },
-  { value: 'RENTAL_AGREEMENT',   label: 'Rental / Lease Agreement' },
-  { value: 'BANK_STATEMENT',     label: 'Bank Statement' },
-  { value: 'GOVERNMENT_LETTER',  label: 'Government Letter' },
-  { value: 'PROPERTY_TAX',       label: 'Property Tax Receipt' },
-];
-
-// ─── Sub-component: one verification card ────────────────────────────────────
-
-interface VerifyCardProps {
-  title: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  iconBg: string;
-  btnColor: string;
-  docTypes: { value: string; label: string }[];
-  verified: boolean;
-  verifiedLabel: string;
-  verifiedColor: string;
-  onSubmit: (docType: string, mediaId: number) => Promise<void>;
-  entityType: string;
-}
-
-function VerifyCard({
-  title, subtitle, icon, iconBg, btnColor,
-  docTypes, verified, verifiedLabel, verifiedColor,
-  onSubmit, entityType,
-}: VerifyCardProps) {
-  const fileRef   = useRef<HTMLInputElement>(null);
-  const [docType,   setDocType]   = useState('');
-  const [preview,   setPreview]   = useState<string | null>(null);
-  const [mediaId,   setMediaId]   = useState<number | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [submitting,setSubmitting]= useState(false);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Preview
-    setPreview(URL.createObjectURL(file));
-    setMediaId(null);
-    // Upload
-    setUploading(true);
-    try {
-      const res = await mediaApi.upload(file, entityType);
-      setMediaId(res.id);
-    } catch {
-      toast.error('Upload failed. Please try again.');
-      setPreview(null);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const clearFile = () => {
-    setPreview(null);
-    setMediaId(null);
-    if (fileRef.current) fileRef.current.value = '';
-  };
-
-  const handleSubmit = async () => {
-    if (!docType)  { toast.error('Please select a document type');  return; }
-    if (!mediaId)  { toast.error('Please upload your document');     return; }
-    setSubmitting(true);
-    try {
-      await onSubmit(docType, mediaId);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (verified) {
-    return (
-      <div className="card p-5">
-        <div className="flex items-center gap-3">
-          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-            {icon}
-          </div>
-          <div>
-            <p className="font-bold text-gray-900 text-sm">{title}</p>
-            <span className={`flex items-center gap-1 text-xs font-semibold mt-0.5 ${verifiedColor}`}>
-              <CheckCircle size={12}/> {verifiedLabel}
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card p-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-          {icon}
-        </div>
-        <div className="flex-1">
-          <p className="font-bold text-gray-900 text-sm">{title}</p>
-          <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{subtitle}</p>
-        </div>
-      </div>
-
-      {/* Step 1 — Document type */}
-      <div>
-        <p className="text-xs font-semibold text-gray-500 mb-1.5">Step 1 — Select document type</p>
-        <div className="relative">
-          <select
-            value={docType}
-            onChange={e => setDocType(e.target.value)}
-            className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 pr-8"
-          >
-            <option value="">-- Choose document --</option>
-            {docTypes.map(d => (
-              <option key={d.value} value={d.value}>{d.label}</option>
-            ))}
-          </select>
-          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
-        </div>
-      </div>
-
-      {/* Step 2 — Upload */}
-      <div>
-        <p className="text-xs font-semibold text-gray-500 mb-1.5">Step 2 — Upload document photo</p>
-
-        {!preview ? (
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="w-full border-2 border-dashed border-gray-200 rounded-xl py-6 flex flex-col items-center gap-2 hover:border-primary-300 hover:bg-primary-50 transition"
-          >
-            <Upload size={22} className="text-gray-300"/>
-            <p className="text-xs text-gray-400">Tap to upload image or PDF</p>
-            <p className="text-xs text-gray-300">Max 50 MB · JPG, PNG, PDF</p>
-          </button>
-        ) : (
-          <div className="relative rounded-xl overflow-hidden border border-gray-200">
-            <img src={preview} alt="Document" className="w-full max-h-44 object-cover"/>
-            {uploading && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                <Loader2 size={24} className="animate-spin text-white"/>
-              </div>
-            )}
-            {!uploading && (
-              <button
-                onClick={clearFile}
-                className="absolute top-2 right-2 w-7 h-7 bg-black/60 rounded-full flex items-center justify-center text-white"
-              >
-                <X size={14}/>
-              </button>
-            )}
-            {!uploading && mediaId && (
-              <div className="absolute bottom-2 left-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle size={10}/> Uploaded
-              </div>
-            )}
-          </div>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-      </div>
-
-      {/* Submit */}
-      <button
-        onClick={handleSubmit}
-        disabled={submitting || uploading || !docType || !mediaId}
-        className={`w-full py-2.5 rounded-xl text-white text-sm font-semibold transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${btnColor}`}
-      >
-        {submitting ? <Loader2 size={16} className="animate-spin"/> : <FileText size={16}/>}
-        Submit for Verification
-      </button>
-    </div>
-  );
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
-
 export default function VerificationPage() {
   const router   = useRouter();
+  const params   = useSearchParams();
   const qc       = useQueryClient();
   const dispatch = useAppDispatch();
 
-  const { data: me, isLoading } = useQuery<UserResponse>({
+  const { data: me, isLoading } = useQuery({
     queryKey: ['me'],
     queryFn:  () => usersApi.getMe(),
   });
@@ -219,17 +28,16 @@ export default function VerificationPage() {
     qc.setQueryData(['me'], updated);
   };
 
-  const handleAddressVerify = async (docType: string, mediaId: number) => {
-    await usersApi.verifyAddress(docType, mediaId);
-    toast.success('Address verified! +10 trust score');
-    await refresh();
-  };
-
-  const handleIdentityVerify = async (docType: string, mediaId: number) => {
-    await usersApi.verifyIdentity(docType, mediaId);
-    toast.success('Identity verified! +20 trust score');
-    await refresh();
-  };
+  useEffect(() => {
+    const status = params.get('digilocker');
+    if (status === 'success') {
+      toast.success('Address verified! +10 trust score 🎉');
+      refresh();
+    } else if (status === 'error') {
+      toast.error('DigiLocker verification failed. Please try again.');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (isLoading) return (
     <div className="flex justify-center items-center min-h-[60vh]">
@@ -247,62 +55,266 @@ export default function VerificationPage() {
         <p className="font-bold text-gray-900">Verification</p>
       </div>
 
-      <div className="px-4 py-5 space-y-4">
-        {/* Info */}
-        <div className="card p-4 bg-blue-50 border border-blue-100 flex gap-3">
-          <AlertCircle size={18} className="text-blue-500 flex-shrink-0 mt-0.5"/>
-          <p className="text-xs text-blue-700 leading-relaxed">
-            Upload a clear photo of your document. Make sure all text is readable. Your documents are stored securely and only used for verification.
-          </p>
-        </div>
-
-        {/* Identity Verification */}
-        <VerifyCard
-          title="Identity Verification"
-          subtitle="Upload a government-issued photo ID. Adds +20 trust score."
-          icon={<Shield size={20} className={me?.identityVerified ? 'text-green-600' : 'text-gray-400'}/>}
-          iconBg={me?.identityVerified ? 'bg-green-100' : 'bg-gray-100'}
-          btnColor="bg-green-500 hover:bg-green-600"
-          docTypes={IDENTITY_DOC_TYPES}
-          verified={!!me?.identityVerified}
-          verifiedLabel="Identity Verified"
-          verifiedColor="text-green-600"
-          onSubmit={handleIdentityVerify}
-          entityType="USER"
-        />
-
-        {/* Address Verification */}
-        <VerifyCard
-          title="Address Verification"
-          subtitle="Upload a document proving your current address. Adds +10 trust score."
-          icon={<MapPin size={20} className={me?.addressVerified ? 'text-blue-600' : 'text-gray-400'}/>}
-          iconBg={me?.addressVerified ? 'bg-blue-100' : 'bg-gray-100'}
-          btnColor="bg-blue-500 hover:bg-blue-600"
-          docTypes={ADDRESS_DOC_TYPES}
-          verified={!!me?.addressVerified}
-          verifiedLabel="Address Verified"
-          verifiedColor="text-blue-600"
-          onSubmit={handleAddressVerify}
-          entityType="USER"
-        />
+      <div className="px-4 py-5 space-y-3 max-w-lg mx-auto">
 
         {/* Trust score */}
         <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Your Trust Score</p>
-          <div className="flex items-center gap-4">
-            <div className="text-3xl font-bold text-primary-600">{me?.trustScore ?? 0}</div>
-            <div className="flex-1">
-              <div className="w-full bg-gray-100 rounded-full h-2">
-                <div
-                  className="bg-primary-500 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min((me?.trustScore ?? 0), 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-1">out of 100</p>
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Trust Score</p>
+            <span className="text-lg font-bold text-primary-600">{me?.trustScore ?? 0} / 100</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2">
+            <div
+              className="bg-primary-500 h-2 rounded-full transition-all duration-700"
+              style={{ width: `${Math.min(me?.trustScore ?? 0, 100)}%` }}
+            />
+          </div>
+          <div className="flex gap-3 mt-2">
+            <span className="text-[11px] text-gray-400 flex items-center gap-1">
+              <Shield size={10} className="text-green-500"/> Identity +20
+            </span>
+            <span className="text-[11px] text-gray-400 flex items-center gap-1">
+              <MapPin size={10} className="text-blue-500"/> Address +10
+            </span>
           </div>
         </div>
+
+        {/* Identity */}
+        {me?.identityVerified ? (
+          <VerifiedCard
+            icon={<Shield size={20} className="text-green-600"/>}
+            bg="bg-green-50"
+            title="Identity Verified"
+            subtitle={me.kycName ? `Verified as ${me.kycName}` : 'Identity confirmed'}
+            borderColor="border-green-200"
+          />
+        ) : (
+          <IdentityCard onSuccess={refresh}/>
+        )}
+
+        {/* Address */}
+        {me?.addressVerified ? (
+          <VerifiedCard
+            icon={<MapPin size={20} className="text-blue-600"/>}
+            bg="bg-blue-50"
+            title="Address Verified"
+            subtitle="Your address is confirmed"
+            borderColor="border-blue-200"
+          />
+        ) : (
+          <AddressCard/>
+        )}
+
+        {/* Security note */}
+        <div className="flex items-center gap-2 px-1">
+          <Lock size={12} className="text-gray-300 flex-shrink-0"/>
+          <p className="text-[11px] text-gray-400">
+            Your documents are encrypted and used only to verify your identity. We never store your ID number.
+          </p>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Verified card ────────────────────────────────────────────────────────────
+
+function VerifiedCard({ icon, bg, title, subtitle, borderColor }: {
+  icon: React.ReactNode; bg: string; title: string; subtitle: string; borderColor: string;
+}) {
+  return (
+    <div className={`card p-4 flex items-center gap-3 border ${borderColor}`}>
+      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${bg}`}>
+        {icon}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-1.5 font-bold text-sm text-gray-900">
+          <CheckCircle size={13} className="text-green-500"/> {title}
+        </div>
+        <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Identity card — Selfie + ID Photo ───────────────────────────────────────
+
+function IdentityCard({ onSuccess }: { onSuccess: () => Promise<void> }) {
+  const idRef     = useRef<HTMLInputElement>(null);
+  const selfieRef = useRef<HTMLInputElement>(null);
+  const [idPhoto,     setIdPhoto]     = useState<File | null>(null);
+  const [selfie,      setSelfie]      = useState<File | null>(null);
+  const [idPreview,   setIdPreview]   = useState<string | null>(null);
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
+  const [loading,     setLoading]     = useState(false);
+
+  const pickId = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setIdPhoto(f);
+    setIdPreview(URL.createObjectURL(f));
+  };
+
+  const pickSelfie = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setSelfie(f);
+    setSelfiePreview(URL.createObjectURL(f));
+  };
+
+  const handleSubmit = async () => {
+    if (!idPhoto || !selfie) {
+      toast.error('Please add both your ID photo and selfie');
+      return;
+    }
+    setLoading(true);
+    try {
+      await verificationApi.verifyKyc(idPhoto, selfie);
+      toast.success('Identity verified! +20 trust score 🎉');
+      await onSuccess();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ready = !!idPhoto && !!selfie;
+
+  return (
+    <div className="card p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-green-50 flex items-center justify-center flex-shrink-0">
+          <Shield size={20} className="text-green-600"/>
+        </div>
+        <div>
+          <p className="font-bold text-gray-900 text-sm">Identity Verification</p>
+          <p className="text-xs text-gray-400">Photo of your ID + a selfie — done in 30 seconds</p>
+        </div>
+      </div>
+
+      {/* Two photo pickers */}
+      <div className="grid grid-cols-2 gap-3">
+
+        {/* ID Photo */}
+        <div>
+          <p className="text-[11px] font-semibold text-gray-500 mb-1.5">
+            Aadhaar / PAN / Driving License
+          </p>
+          <button
+            onClick={() => idRef.current?.click()}
+            className="w-full aspect-[3/2] rounded-2xl overflow-hidden border-2 border-dashed border-gray-200 hover:border-primary-300 transition flex items-center justify-center bg-gray-50 relative"
+          >
+            {idPreview ? (
+              <img src={idPreview} className="w-full h-full object-cover" alt="ID"/>
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 py-4">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+                  <CreditCard size={18} className="text-primary-500"/>
+                </div>
+                <p className="text-[11px] text-gray-400 text-center leading-tight px-2">
+                  Tap to add<br/>ID photo
+                </p>
+              </div>
+            )}
+          </button>
+          <input ref={idRef} type="file" accept="image/*" className="hidden" onChange={pickId}/>
+        </div>
+
+        {/* Selfie */}
+        <div>
+          <p className="text-[11px] font-semibold text-gray-500 mb-1.5">Your selfie</p>
+          <button
+            onClick={() => selfieRef.current?.click()}
+            className="w-full aspect-[3/2] rounded-2xl overflow-hidden border-2 border-dashed border-gray-200 hover:border-primary-300 transition flex items-center justify-center bg-gray-50 relative"
+          >
+            {selfiePreview ? (
+              <img src={selfiePreview} className="w-full h-full object-cover" alt="Selfie"/>
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 py-4">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+                  <Camera size={18} className="text-primary-500"/>
+                </div>
+                <p className="text-[11px] text-gray-400 text-center leading-tight px-2">
+                  Tap to take<br/>selfie
+                </p>
+              </div>
+            )}
+          </button>
+          <input ref={selfieRef} type="file" accept="image/*" capture="user" className="hidden" onChange={pickSelfie}/>
+        </div>
+      </div>
+
+      {/* Submit */}
+      <button
+        onClick={handleSubmit}
+        disabled={loading || !ready}
+        className={`w-full py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2
+          ${ready
+            ? 'bg-green-500 hover:bg-green-600 text-white'
+            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          }`}
+      >
+        {loading
+          ? <><Loader2 size={16} className="animate-spin"/> Verifying…</>
+          : <><Shield size={16}/> Verify Identity</>
+        }
+      </button>
+    </div>
+  );
+}
+
+// ─── Address card — DigiLocker one-tap ───────────────────────────────────────
+
+function AddressCard() {
+  const [loading, setLoad] = useState(false);
+
+  const handleDigiLocker = async () => {
+    setLoad(true);
+    try {
+      const { url } = await verificationApi.getDigiLockerUrl();
+      window.location.href = url;
+    } catch {
+      toast.error('Could not connect to DigiLocker. Please try again.');
+      setLoad(false);
+    }
+  };
+
+  return (
+    <div className="card p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <MapPin size={20} className="text-blue-600"/>
+        </div>
+        <div>
+          <p className="font-bold text-gray-900 text-sm">Address Verification</p>
+          <p className="text-xs text-gray-400">Connect DigiLocker — one tap, government verified</p>
+        </div>
+      </div>
+
+      {/* One big button */}
+      <button
+        onClick={handleDigiLocker}
+        disabled={loading}
+        className="w-full py-3.5 rounded-2xl bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-semibold text-sm transition flex items-center justify-between px-5 disabled:opacity-60"
+      >
+        <div className="flex items-center gap-2.5">
+          {loading
+            ? <Loader2 size={18} className="animate-spin"/>
+            : <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
+                <MapPin size={15}/>
+              </div>
+          }
+          <span>{loading ? 'Connecting…' : 'Verify with DigiLocker'}</span>
+        </div>
+        {!loading && <ChevronRight size={18} className="opacity-70"/>}
+      </button>
+
+      <p className="text-[11px] text-gray-400 text-center">
+        Log in with Aadhaar OTP · Auto-redirects back · Takes 30 seconds
+      </p>
     </div>
   );
 }

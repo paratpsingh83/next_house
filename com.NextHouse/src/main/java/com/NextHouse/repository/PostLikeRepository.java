@@ -36,4 +36,23 @@ public interface PostLikeRepository extends JpaRepository<PostLike, Long> {
      */
     @Query("SELECT pl.post.id FROM PostLike pl WHERE pl.post.id IN :postIds AND pl.likedBy.id = :userId")
     List<Long> findLikedPostIds(@Param("postIds") List<Long> postIds, @Param("userId") Long userId);
+
+    /**
+     * Batch: post.id + reactionType for a user across many posts.
+     * Used in feed enrichment to populate isLiked + myReactionType in one query.
+     */
+    @Query("SELECT pl.post.id, pl.reactionType FROM PostLike pl WHERE pl.post.id IN :postIds AND pl.likedBy.id = :userId")
+    List<Object[]> findUserReactionTypesByPostIds(@Param("postIds") List<Long> postIds, @Param("userId") Long userId);
+
+    /**
+     * Batch: post.id + reactionType + count across many posts.
+     * Used in feed enrichment to build reaction summaries in one query.
+     */
+    @Query("""
+            SELECT pl.post.id, pl.reactionType, COUNT(pl)
+            FROM PostLike pl
+            WHERE pl.post.id IN :postIds
+            GROUP BY pl.post.id, pl.reactionType
+            """)
+    List<Object[]> countReactionsByPostIds(@Param("postIds") List<Long> postIds);
 }

@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { setCredentials } from '@/store/slices/authSlice';
 import { authApi } from '@/api';
+import { tokens } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 const schema = z.object({
@@ -42,9 +43,10 @@ export default function RegisterPage() {
         deviceType:  'WEB',
       });
 
-      if (res.user && res.accessToken && res.refreshToken) {
-        dispatch(setCredentials({ user: res.user, accessToken: res.accessToken, refreshToken: res.refreshToken }));
-        toast.success('Account created! Welcome to NexHouse 🎉');
+      if (res.user && res.accessToken) {
+        tokens.setWsToken(res.accessToken);  // sessionStorage — for WebSocket only
+        dispatch(setCredentials({ user: res.user }));
+        toast.success('Account created! Welcome to NextHouse 🎉');
         router.push('/feed');
       }
     } catch (err: any) {
@@ -70,7 +72,7 @@ export default function RegisterPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary-500 shadow-lg mb-4">
             <span className="text-white text-2xl font-bold">N</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Join NexHouse</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Join NextHouse</h1>
           <p className="text-gray-500 mt-1">Connect with your neighbourhood</p>
         </div>
 

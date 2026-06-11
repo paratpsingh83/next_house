@@ -3,6 +3,7 @@ package com.NextHouse.entity;
 import com.NextHouse.constant.OtpPurpose;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -39,12 +40,14 @@ public class OtpVerification extends BaseEntity {
     @Column(name = "purpose", nullable = false, length = 30)
     private OtpPurpose purpose;
 
+    @Builder.Default
     @Column(name = "verified", nullable = false)
     private Boolean verified = false;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    @Builder.Default
     @Column(name = "attempts", nullable = false)
     private Integer attempts = 0;
 

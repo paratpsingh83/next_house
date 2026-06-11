@@ -20,6 +20,7 @@ public class UserResponseDTO {
     private String        gender;
     private LocalDate     dob;
     private String        address;
+    private String        role;
     private String        verificationStatus;
     private String        accountStatus;
     private Integer       trustScore;
@@ -34,5 +35,6 @@ public class UserResponseDTO {
     private Boolean       isFollowedBy;
     private Boolean       isBlocked;
     private Boolean       isRequested;
+    private String        kycName;
     private LocalDateTime createdAt;
 }

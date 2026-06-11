@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -49,6 +49,9 @@ public class PostResponseDTO {
     private Boolean isLiked;
     private Boolean isSaved;
     private String myReactionType;
+
+    // Repost — embedded original post (one level deep, no recursion)
+    private PostResponseDTO originalPost;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

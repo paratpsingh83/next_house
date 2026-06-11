@@ -1,6 +1,7 @@
 package com.NextHouse.service;
 
 import com.NextHouse.dto.common.PageResponseDTO;
+import com.NextHouse.dto.response.NotificationPreferenceDTO;
 import com.NextHouse.dto.response.NotificationResponseDTO;
 import com.NextHouse.entity.User;
 
@@ -38,4 +39,10 @@ public interface NotificationService {
     void notifyActivityApproval(Long userId, Long activityId, boolean approved);
 
     void notifyCommunityJoin(User joiner, Long communityId, Long adminId);
+
+    void notifyActivityReminder(Long userId, Long activityId, String activityTitle);
+
+    NotificationPreferenceDTO getPreferences(Long userId);
+
+    NotificationPreferenceDTO updatePreferences(Long userId, NotificationPreferenceDTO dto);
 }

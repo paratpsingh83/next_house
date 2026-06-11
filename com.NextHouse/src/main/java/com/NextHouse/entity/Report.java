@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -43,6 +44,7 @@ public class Report extends BaseEntity {
     /**
      * PENDING | REVIEWED | DISMISSED | ACTION_TAKEN
      */
+    @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
     private String status = "PENDING";
 

@@ -106,12 +106,20 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             @Param("blockedIds") List<Long> blockedIds,
             Pageable pageable);
 
-    @Query("""
-            SELECT p FROM Post p
-            WHERE p.isDeleted = false AND p.status = com.NextHouse.constant.PostStatus.PUBLISHED
-              AND LOWER(p.hashtagString) LIKE LOWER(CONCAT('%', :hashtag, '%'))
-            ORDER BY p.createdAt DESC
-            """)
+    @Query(value = """
+            SELECT DISTINCT p.* FROM posts p
+            JOIN post_hashtags ph ON ph.post_id = p.id
+            WHERE p.is_deleted = false AND p.status = 'PUBLISHED'
+              AND LOWER(ph.hashtag) = LOWER(:hashtag)
+            ORDER BY p.created_at DESC
+            """,
+            countQuery = """
+            SELECT COUNT(DISTINCT p.id) FROM posts p
+            JOIN post_hashtags ph ON ph.post_id = p.id
+            WHERE p.is_deleted = false AND p.status = 'PUBLISHED'
+              AND LOWER(ph.hashtag) = LOWER(:hashtag)
+            """,
+            nativeQuery = true)
     Page<Post> findByHashtag(@Param("hashtag") String hashtag, Pageable pageable);
 
     @Modifying @Query("UPDATE Post p SET p.likeCount    = p.likeCount    + 1 WHERE p.id = :id") int incrementLikeCount   (@Param("id") Long id);

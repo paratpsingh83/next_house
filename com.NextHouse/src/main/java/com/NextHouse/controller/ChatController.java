@@ -2,6 +2,7 @@ package com.NextHouse.controller;
 
 import com.NextHouse.dto.common.ApiResponseDTO;
 import com.NextHouse.dto.common.PageResponseDTO;
+import com.NextHouse.dto.request.AddReactionRequestDTO;
 import com.NextHouse.dto.request.CreateChatRoomRequestDTO;
 import com.NextHouse.dto.request.SendMessageRequestDTO;
 import com.NextHouse.dto.response.ChatMessageResponseDTO;
@@ -210,5 +211,19 @@ public class ChatController {
             @CurrentUser Long currentUserId) {
         return ResponseEntity.ok(
             ApiResponseDTO.success(chatService.getUnreadCount(roomId, currentUserId)));
+    }
+
+    @PostMapping("/rooms/{roomId}/messages/{messageId}/react")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Add or toggle a reaction on a message",
+               description = "Same emoji → removes reaction (toggle). Different emoji → replaces. Broadcasts updated message to room via WebSocket.")
+    public ResponseEntity<ApiResponseDTO<ChatMessageResponseDTO>> reactToMessage(
+            @PathVariable Long roomId,
+            @PathVariable Long messageId,
+            @Valid @RequestBody AddReactionRequestDTO dto,
+            @CurrentUser Long currentUserId) {
+        ChatMessageResponseDTO updated = chatService.reactToMessage(roomId, messageId, dto.getEmoji(), currentUserId);
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/messages", updated);
+        return ResponseEntity.ok(ApiResponseDTO.success("Reaction updated", updated));
     }
 }

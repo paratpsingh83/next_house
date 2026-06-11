@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Loader2, Users, Search } from 'lucide-react';
+import { Loader2, Users, Search, Plus } from 'lucide-react';
 import { communitiesApi } from '@/api';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -52,6 +52,13 @@ export default function CommunitiesPage() {
 
   return (
     <div className="px-4 py-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-gray-900">Communities</h1>
+        <Link href="/communities/create" className="flex items-center gap-1.5 bg-primary-500 text-white text-sm font-semibold px-3 py-1.5 rounded-full hover:bg-primary-600 transition">
+          <Plus size={15}/> Create
+        </Link>
+      </div>
+
       <div className="flex gap-2">
         {(['mine', 'discover'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}

@@ -113,7 +113,7 @@ public class PostController {
     @GetMapping("/feed/trending")
     public ResponseEntity<ApiResponseDTO<PageResponseDTO<PostResponseDTO>>> getTrendingFeed(
             @CurrentUser Long currentUserId,
-            @RequestParam Long neighborhoodId,
+            @RequestParam(required = false) Long neighborhoodId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(
@@ -207,6 +207,18 @@ public class PostController {
             @PathVariable Long postId, @CurrentUser Long currentUserId) {
         postService.sharePost(postId, currentUserId);
         return ResponseEntity.ok(ApiResponseDTO.success("Share recorded"));
+    }
+
+    @PostMapping("/{postId}/repost")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Repost to feed with optional caption")
+    public ResponseEntity<ApiResponseDTO<PostResponseDTO>> repost(
+            @PathVariable Long postId,
+            @Valid @RequestBody(required = false) CreateRepostRequestDTO dto,
+            @CurrentUser Long currentUserId) {
+        if (dto == null) dto = new CreateRepostRequestDTO();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponseDTO.success(postService.repostPost(postId, dto, currentUserId)));
     }
 
     // ─── Comments ─────────────────────────────────────────────────────────────

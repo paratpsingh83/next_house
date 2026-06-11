@@ -24,6 +24,7 @@ public class CreatePostRequestDTO {
     @Max(50000)
     private Integer visibilityRadius;
 
+    @Builder.Default
     private Boolean anonymous = false;
 
     // Media IDs already uploaded via /api/v1/media/upload

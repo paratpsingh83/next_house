@@ -29,7 +29,8 @@ public interface PostMapper {
     @Mapping(target = "updatedAt",    ignore = true)
     @Mapping(target = "isDeleted",    ignore = true)
     @Mapping(target = "active",       ignore = true)
-    @Mapping(target = "hashtagString",ignore = true)
+    @Mapping(target = "hashtagString",  ignore = true)
+    @Mapping(target = "originalPost",   ignore = true)
     Post toEntity(CreatePostRequestDTO dto);
 
     @Mapping(target = "isLiked",       ignore = true)

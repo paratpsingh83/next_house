@@ -28,6 +28,11 @@ spec:
     name: nexthouse-api
 
   # ── Replica bounds ──────────────────────────────────────────────────────────
+  # WARNING: WebSocket uses Spring SimpleBroker (in-memory). With minReplicas > 1,
+  # subscribers connected to Pod A will NOT receive messages published on Pod B.
+  # This breaks chat, typing indicators, and real-time notifications at scale.
+  # Fix: switch WebSocketConfig to StompBrokerRelay (RabbitMQ or Redis) before
+  # increasing minReplicas beyond 1 in a WebSocket-heavy environment.
   minReplicas: 2      # Always at least 2 for HA (one can fail without downtime)
   maxReplicas: 20     # Hard ceiling — prevents runaway scaling
 

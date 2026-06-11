@@ -24,6 +24,10 @@ public interface MarketplaceItemRepository extends JpaRepository<MarketplaceItem
               AND (:category IS NULL OR m.category = :category)
               AND (:minPrice IS NULL OR m.price >= :minPrice)
               AND (:maxPrice IS NULL OR m.price <= :maxPrice)
+              AND (:query IS NULL OR (
+                    LOWER(m.title) LIKE LOWER(CONCAT('%', :query, '%'))
+                    OR LOWER(m.description) LIKE LOWER(CONCAT('%', :query, '%'))
+                  ))
               AND ST_DWithin(
                     m.location::geography,
                     ST_MakePoint(:longitude, :latitude)::geography,
@@ -40,6 +44,7 @@ public interface MarketplaceItemRepository extends JpaRepository<MarketplaceItem
             @Param("category") String category,
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,
+            @Param("query") String query,
             Pageable pageable
     );
 

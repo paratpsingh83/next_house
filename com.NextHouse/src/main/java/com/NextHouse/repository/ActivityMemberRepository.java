@@ -58,4 +58,12 @@ public interface ActivityMemberRepository extends JpaRepository<ActivityMember, 
             WHERE am.id = :id
             """)
     int updateJoinStatus(@Param("id") Long id, @Param("status") JoinStatus status);
+
+    @Query("""
+            SELECT am.user.id FROM ActivityMember am
+            WHERE am.activity.id = :activityId
+              AND am.joinStatus = com.NextHouse.constant.JoinStatus.APPROVED
+              AND am.isDeleted = false
+            """)
+    List<Long> findApprovedMemberUserIds(@Param("activityId") Long activityId);
 }

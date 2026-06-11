@@ -22,13 +22,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -37,6 +43,7 @@ import java.util.stream.Collectors;
 public class PostServiceImpl implements PostService {
 
     private final PostRepository         postRepository;
+    private final PostHashtagRepository  postHashtagRepository;
     private final PostCommentRepository  commentRepository;
     private final PostLikeRepository     postLikeRepository;
     private final SavedPostRepository    savedPostRepository;
@@ -93,6 +100,7 @@ public class PostServiceImpl implements PostService {
         }
 
         Post saved = postRepository.save(post);
+        saveHashtags(saved.getId(), dto.getHashtags());
 
         if (dto.getMediaIds() != null && !dto.getMediaIds().isEmpty()) {
             mediaService.attachMediaToEntity(dto.getMediaIds(), "POST", saved.getId());
@@ -136,7 +144,12 @@ public class PostServiceImpl implements PostService {
         post.setEdited(true);
         if (dto.getHashtags() != null)
             post.setHashtagString(String.join(",", dto.getHashtags()).toLowerCase());
-        return enrichPostResponse(postMapper.toResponse(postRepository.save(post)), currentUserId);
+        Post saved = postRepository.save(post);
+        if (dto.getHashtags() != null) {
+            postHashtagRepository.deleteByPostId(postId);
+            saveHashtags(postId, dto.getHashtags());
+        }
+        return enrichPostResponse(postMapper.toResponse(saved), currentUserId);
     }
 
     @Override
@@ -160,9 +173,8 @@ public class PostServiceImpl implements PostService {
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getFollowingFeed(Long currentUserId, int page, int size) {
         List<Long> blockedIds = getBlockedIds(currentUserId);
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(postRepository.findFollowingFeed(currentUserId, blockedIds, pageable)
-                .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        Page<Post> posts = postRepository.findFollowingFeed(currentUserId, blockedIds, PageRequest.of(page, size));
+        return enrichedPage(posts, currentUserId);
     }
 
     @Override
@@ -173,16 +185,15 @@ public class PostServiceImpl implements PostService {
         List<Long> blockedIds = getBlockedIds(currentUserId);
         Pageable pageable = PageRequest.of(page, size);
 
-        // Tier 1
+        // Tier 1 — neighborhood containing user's stored location
         Long neighborhoodId = userRepository.findById(currentUserId)
                 .flatMap(u -> u.getLatitude() != null
-                        ? neighborhoodRepository.findNeighborhoodContainingPoint(
-                        u.getLatitude(), u.getLongitude())
+                        ? neighborhoodRepository.findNeighborhoodContainingPoint(u.getLatitude(), u.getLongitude())
                         : java.util.Optional.empty())
                 .map(Neighborhood::getId)
                 .orElse(null);
 
-        // Tier 2
+        // Tier 2 — nearest neighborhood to requested coords
         if (neighborhoodId == null) {
             neighborhoodId = neighborhoodRepository
                     .findNearestNeighborhood(geoDto.getLatitude(), geoDto.getLongitude())
@@ -190,54 +201,44 @@ public class PostServiceImpl implements PostService {
                     .orElse(null);
         }
 
-        Page<Post> posts;
-        if (neighborhoodId != null) {
-            posts = postRepository.findNearbyFeed(
-                    neighborhoodId, geoDto.getLatitude(), geoDto.getLongitude(),
-                    geoDto.getRadiusMeters(), blockedIds, pageable);
-        } else {
-            // Tier 3: no neighborhoods in DB at all
-            posts = postRepository.findNearbyFeedByGps(
-                    geoDto.getLatitude(), geoDto.getLongitude(),
-                    geoDto.getRadiusMeters(), blockedIds, pageable);
-        }
+        Page<Post> posts = neighborhoodId != null
+                ? postRepository.findNearbyFeed(neighborhoodId, geoDto.getLatitude(), geoDto.getLongitude(),
+                        geoDto.getRadiusMeters(), blockedIds, pageable)
+                : postRepository.findNearbyFeedByGps(geoDto.getLatitude(), geoDto.getLongitude(),
+                        geoDto.getRadiusMeters(), blockedIds, pageable);
 
-        return PageResponseDTO.of(posts.map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        return enrichedPage(posts, currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     @Cacheable(value = "feed:trending", key = "#neighborhoodId + ':' + #page")
     public PageResponseDTO<PostResponseDTO> getTrendingFeed(Long currentUserId, Long neighborhoodId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(postRepository.findTrendingFeed(neighborhoodId, pageable)
-                .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        Page<Post> posts = postRepository.findTrendingFeed(neighborhoodId, PageRequest.of(page, size));
+        return enrichedPage(posts, currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getCommunityFeed(Long currentUserId, Long communityId, int page, int size) {
         List<Long> blockedIds = getBlockedIds(currentUserId);
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(postRepository.findCommunityFeed(communityId, blockedIds, pageable)
-                .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        Page<Post> posts = postRepository.findCommunityFeed(communityId, blockedIds, PageRequest.of(page, size));
+        return enrichedPage(posts, currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getUserPosts(Long userId, Long currentUserId, int page, int size) {
         List<Long> blockedIds = getBlockedIds(currentUserId);
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(postRepository.findUserPosts(userId, blockedIds, pageable)
-                .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        Page<Post> posts = postRepository.findUserPosts(userId, blockedIds, PageRequest.of(page, size));
+        return enrichedPage(posts, currentUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getHashtagFeed(String hashtag, Long currentUserId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(postRepository.findByHashtag(hashtag.toLowerCase(), pageable)
-                .map(p -> enrichPostResponse(postMapper.toResponse(p), currentUserId)));
+        Page<Post> posts = postRepository.findByHashtag(hashtag.toLowerCase(), PageRequest.of(page, size));
+        return enrichedPage(posts, currentUserId);
     }
 
     // ─── Reactions ────────────────────────────────────────────────────────────
@@ -255,6 +256,10 @@ public class PostServiceImpl implements PostService {
                     postLikeRepository.save(PostLike.builder()
                             .post(post).likedBy(user).reactionType(dto.getReactionType()).build());
                     postRepository.incrementLikeCount(postId);
+                    // Notify post author — skip self-reactions
+                    if (!currentUserId.equals(post.getCreatedBy().getId())) {
+                        notificationService.notifyPostLike(user, postId, post.getCreatedBy().getId());
+                    }
                 }
         );
     }
@@ -292,11 +297,12 @@ public class PostServiceImpl implements PostService {
     @Override
     @Transactional(readOnly = true)
     public PageResponseDTO<PostResponseDTO> getSavedPosts(Long currentUserId, String collection, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(
-                savedPostRepository.findSavedPosts(currentUserId, collection, pageable)
-                        .map(sp -> enrichPostResponse(postMapper.toResponse(sp.getPost()), currentUserId))
-        );
+        Page<SavedPost> savedPage = savedPostRepository.findSavedPosts(currentUserId, collection, PageRequest.of(page, size));
+        List<PostResponseDTO> baseDtos = savedPage.getContent().stream()
+                .map(sp -> postMapper.toResponse(sp.getPost()))
+                .collect(Collectors.toList());
+        List<PostResponseDTO> enriched = enrichPostResponsesBatch(baseDtos, currentUserId);
+        return PageResponseDTO.of(new PageImpl<>(enriched, savedPage.getPageable(), savedPage.getTotalElements()));
     }
 
     @Override
@@ -304,6 +310,35 @@ public class PostServiceImpl implements PostService {
     public void sharePost(Long postId, Long currentUserId) {
         findPostOrThrow(postId);
         postRepository.incrementShareCount(postId);
+    }
+
+    @Override
+    @Transactional
+    public PostResponseDTO repostPost(Long postId, CreateRepostRequestDTO dto, Long currentUserId) {
+        Post original = findPostOrThrow(postId);
+        if (original.getIsDeleted()) throw new NotFoundException("Post not found");
+
+        User user = findUserOrThrow(currentUserId);
+
+        // If original is itself a repost, point to its root to avoid repost chains
+        Post root = original.getOriginalPost() != null ? original.getOriginalPost() : original;
+
+        Post repost = Post.builder()
+                .postType(root.getPostType())
+                .content(dto.getContent())
+                .status(com.NextHouse.constant.PostStatus.PUBLISHED)
+                .anonymous(false)
+                .originalPost(root)
+                .createdBy(user)
+                .build();
+
+        Post saved = postRepository.save(repost);
+        postRepository.incrementShareCount(root.getId());
+
+        PostResponseDTO originalDto = postMapper.toResponse(root);
+        return postMapper.toResponse(saved).toBuilder()
+                .originalPost(originalDto)
+                .build();
     }
 
     // ─── Comments ─────────────────────────────────────────────────────────────
@@ -385,7 +420,7 @@ public class PostServiceImpl implements PostService {
     }
 
     private List<Long> getBlockedIds(Long userId) {
-        List<Long> blocked = new java.util.ArrayList<>(blockedUserRepository.findBlockedUserIds(userId));
+        List<Long> blocked = new ArrayList<>(blockedUserRepository.findBlockedUserIds(userId));
         blocked.addAll(blockedUserRepository.findUsersWhoBlockedMe(userId));
         // Native SQL queries use NOT IN (:blockedIds); PostgreSQL rejects NOT IN ()
         // so we add a sentinel that matches no real user ID.
@@ -393,10 +428,96 @@ public class PostServiceImpl implements PostService {
         return blocked;
     }
 
+    /**
+     * Converts a Page<Post> to an enriched PageResponseDTO using batch queries.
+     * 4 total DB queries regardless of page size (was 4 × page_size before).
+     */
+    private PageResponseDTO<PostResponseDTO> enrichedPage(Page<Post> page, Long currentUserId) {
+        List<PostResponseDTO> baseDtos = page.getContent().stream()
+                .map(postMapper::toResponse)
+                .collect(Collectors.toList());
+        List<PostResponseDTO> enriched = enrichPostResponsesBatch(baseDtos, currentUserId);
+        return PageResponseDTO.of(new PageImpl<>(enriched, page.getPageable(), page.getTotalElements()));
+    }
+
+    /**
+     * Batch-enriches a list of post DTOs — 4 queries total for any list size.
+     * Replaces the per-post enrichPostResponse calls in feed endpoints.
+     */
+    private List<PostResponseDTO> enrichPostResponsesBatch(List<PostResponseDTO> dtos, Long currentUserId) {
+        if (dtos.isEmpty()) return dtos;
+
+        List<Long> postIds = dtos.stream().map(PostResponseDTO::getId).collect(Collectors.toList());
+
+        // 1. Batch media — group by postId
+        Map<Long, List<MediaFileResponseDTO>> mediaByPost = new HashMap<>();
+        mediaFileRepository.findByEntityTypeAndEntityIdsAndIsDeletedFalse("POST", postIds)
+                .forEach(mf -> mediaByPost
+                        .computeIfAbsent(mf.getEntityId(), k -> new ArrayList<>())
+                        .add(MediaFileResponseDTO.builder()
+                                .id(mf.getId()).url(mf.getUrl()).thumbnailUrl(mf.getThumbnailUrl())
+                                .type(mf.getType()).mimeType(mf.getMimeType())
+                                .width(mf.getWidth()).height(mf.getHeight()).size(mf.getSize()).build()));
+
+        // 2. Batch reactions — group by postId
+        Map<Long, List<ReactionSummaryDTO>> reactionsByPost = new HashMap<>();
+        postLikeRepository.countReactionsByPostIds(postIds)
+                .forEach(row -> reactionsByPost
+                        .computeIfAbsent((Long) row[0], k -> new ArrayList<>())
+                        .add(ReactionSummaryDTO.builder()
+                                .reactionType((String) row[1])
+                                .count((Long) row[2])
+                                .build()));
+
+        // 3. Batch current-user reactions (isLiked + myReactionType in one query)
+        Map<Long, String> myReactionByPost = new HashMap<>();
+        if (currentUserId != null) {
+            postLikeRepository.findUserReactionTypesByPostIds(postIds, currentUserId)
+                    .forEach(row -> myReactionByPost.put((Long) row[0], (String) row[1]));
+        }
+
+        // 4. Batch saved post IDs
+        Set<Long> savedPostIds = new HashSet<>();
+        if (currentUserId != null) {
+            savedPostIds.addAll(savedPostRepository.findSavedPostIds(currentUserId, postIds));
+        }
+
+        return dtos.stream().map(dto -> {
+            UserSummaryDTO author = Boolean.TRUE.equals(dto.getAnonymous()) ? null : dto.getCreatedBy();
+            return PostResponseDTO.builder()
+                    .id(dto.getId())
+                    .postType(dto.getPostType())
+                    .content(dto.getContent())
+                    .status(dto.getStatus())
+                    .visibilityRadius(dto.getVisibilityRadius())
+                    .anonymous(dto.getAnonymous())
+                    .edited(dto.getEdited())
+                    .likeCount(dto.getLikeCount())
+                    .commentCount(dto.getCommentCount())
+                    .shareCount(dto.getShareCount())
+                    .hashtagString(dto.getHashtagString())
+                    .thumbnailUrl(dto.getThumbnailUrl())
+                    .latitude(dto.getLatitude())
+                    .longitude(dto.getLongitude())
+                    .address(dto.getAddress())
+                    .createdBy(author)
+                    .community(dto.getCommunity())
+                    .neighborhood(dto.getNeighborhood())
+                    .media(mediaByPost.getOrDefault(dto.getId(), List.of()))
+                    .reactions(reactionsByPost.getOrDefault(dto.getId(), List.of()))
+                    .isLiked(myReactionByPost.containsKey(dto.getId()))
+                    .isSaved(savedPostIds.contains(dto.getId()))
+                    .myReactionType(myReactionByPost.get(dto.getId()))
+                    .createdAt(dto.getCreatedAt())
+                    .updatedAt(dto.getUpdatedAt())
+                    .build();
+        }).collect(Collectors.toList());
+    }
+
+    /** Single-post enrichment — used only for getPost() — keeps 4 queries for one post. */
     private PostResponseDTO enrichPostResponse(PostResponseDTO dto, Long currentUserId) {
         if (dto == null) return null;
 
-        // Media
         List<MediaFileResponseDTO> media = mediaFileRepository
                 .findByEntityTypeAndEntityIdAndIsDeletedFalse("POST", dto.getId())
                 .stream()
@@ -406,7 +527,6 @@ public class PostServiceImpl implements PostService {
                         .width(mf.getWidth()).height(mf.getHeight()).size(mf.getSize()).build())
                 .collect(Collectors.toList());
 
-        // Reactions
         List<ReactionSummaryDTO> reactions = postLikeRepository
                 .countReactionsByPostId(dto.getId())
                 .stream()
@@ -416,7 +536,6 @@ public class PostServiceImpl implements PostService {
                         .build())
                 .collect(Collectors.toList());
 
-        // Per-user context
         boolean isLiked = false;
         boolean isSaved = false;
         String  myReaction = null;
@@ -427,9 +546,7 @@ public class PostServiceImpl implements PostService {
             isSaved    = savedPostRepository.existsByUserIdAndPostId(currentUserId, dto.getId());
         }
 
-        // Anonymous: hide author
-        UserSummaryDTO author = dto.getAnonymous() != null && dto.getAnonymous()
-                ? null : dto.getCreatedBy();
+        UserSummaryDTO author = Boolean.TRUE.equals(dto.getAnonymous()) ? null : dto.getCreatedBy();
 
         return PostResponseDTO.builder()
                 .id(dto.getId())
@@ -458,5 +575,15 @@ public class PostServiceImpl implements PostService {
                 .createdAt(dto.getCreatedAt())
                 .updatedAt(dto.getUpdatedAt())
                 .build();
+    }
+
+    private void saveHashtags(Long postId, List<String> hashtags) {
+        if (hashtags == null || hashtags.isEmpty()) return;
+        Post ref = postRepository.getReferenceById(postId);
+        List<PostHashtag> entities = hashtags.stream()
+            .filter(t -> t != null && !t.isBlank())
+            .map(t -> PostHashtag.builder().post(ref).hashtag(t.toLowerCase().trim()).build())
+            .collect(Collectors.toList());
+        if (!entities.isEmpty()) postHashtagRepository.saveAll(entities);
     }
 }

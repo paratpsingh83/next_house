@@ -27,6 +27,7 @@ public class CreateMarketplaceItemRequestDTO {
     private BigDecimal price;
 
     private String conditionType;
+    @Builder.Default
     private Boolean negotiable = false;
 
     private Long communityId;

@@ -12,28 +12,23 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const router   = useRouter();
 
   useEffect(() => {
-    // Listen for forced logout events (token refresh failed)
+    // Forced logout (token refresh failed)
     const handleLogout = () => {
+      tokens.clear();
       dispatch(clearAuth());
       router.push('/login');
     };
     window.addEventListener('nh:logout', handleLogout);
 
-    // Hydrate session on mount
-    const access  = tokens.getAccess();
-    const refresh = tokens.getRefresh();
-
-    if (!access || !refresh) {
-      dispatch(setLoading(false));
-    } else {
-      usersApi.getMe()
-        .then(user => {
-          dispatch(setCredentials({ user, accessToken: access, refreshToken: refresh }));
-        })
-        .catch(() => {
-          dispatch(clearAuth());
-        });
-    }
+    // Hydrate session via httpOnly cookie — no token check needed client-side
+    usersApi.getMe()
+      .then(user => {
+        dispatch(setCredentials({ user }));
+      })
+      .catch(() => {
+        // Not logged in (401) — that's fine, not an error
+        dispatch(setLoading(false));
+      });
 
     return () => window.removeEventListener('nh:logout', handleLogout);
   }, []); // eslint-disable-line

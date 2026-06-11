@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -24,6 +25,7 @@ public class SearchHistory extends BaseEntity {
     /**
      * POST | USER | ACTIVITY | COMMUNITY | MARKETPLACE | ALL
      */
+    @Builder.Default
     @Column(name = "search_type", length = 30)
     private String searchType = "ALL";
 

@@ -84,4 +84,9 @@ public class Post extends CommunityScopedEntity {
     @JoinColumn(name = "created_by", nullable = false,
             foreignKey = @ForeignKey(name = "fk_post_creator"))
     private User createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "original_post_id",
+            foreignKey = @ForeignKey(name = "fk_post_original"))
+    private Post originalPost;
 }

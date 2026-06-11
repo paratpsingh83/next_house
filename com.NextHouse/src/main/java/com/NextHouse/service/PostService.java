@@ -40,6 +40,8 @@ public interface PostService {
 
     void sharePost(Long postId, Long currentUserId);
 
+    PostResponseDTO repostPost(Long postId, CreateRepostRequestDTO dto, Long currentUserId);
+
     // Comments
     PostCommentResponseDTO addComment(Long postId, Long currentUserId, CreateCommentRequestDTO dto);
 

@@ -3,6 +3,7 @@ package com.NextHouse.entity;
 import com.NextHouse.constant.ModerationStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -32,6 +33,7 @@ public class ModerationQueue extends BaseEntity {
     @Column(name = "content_id", nullable = false)
     private Long contentId;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private ModerationStatus status = ModerationStatus.PENDING;
@@ -48,6 +50,7 @@ public class ModerationQueue extends BaseEntity {
     @Column(name = "ai_response", columnDefinition = "TEXT")
     private String aiResponse;
 
+    @Builder.Default
     @Column(name = "auto_blocked", nullable = false)
     private Boolean autoBlocked = false;
 

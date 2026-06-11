@@ -159,6 +159,19 @@ public class CommunityController {
         return ResponseEntity.ok(ApiResponseDTO.success("Member removed"));
     }
 
+    @PostMapping("/{communityId}/transfer-ownership")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Transfer community ownership",
+        description = "OWNER only. The target user must be an existing approved member. Current owner is demoted to MEMBER.")
+    public ResponseEntity<ApiResponseDTO<Void>> transferOwnership(
+            @PathVariable Long communityId,
+            @RequestParam Long newOwnerUserId,
+            @CurrentUser Long currentUserId) {
+        communityService.transferOwnership(communityId, newOwnerUserId, currentUserId);
+        return ResponseEntity.ok(ApiResponseDTO.success("Ownership transferred successfully"));
+    }
+
     @PatchMapping("/{communityId}/members/{memberId}/role")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Update a member's role", description = "OWNER only. Valid roles: ADMIN, MODERATOR, MEMBER.")

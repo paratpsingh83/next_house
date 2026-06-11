@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +55,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatRoomMemberRepository      memberRepository;
     private final ChatMessageRepository         messageRepository;
     private final ChatMessageDeletionRepository msgDeletionRepository;
+    private final MessageReactionRepository     reactionRepository;
     private final UserRepository                userRepository;
     private final BlockedUserRepository         blockedUserRepository;
     private final UserPresenceRepository        userPresenceRepository;
@@ -215,20 +216,66 @@ public class ChatServiceImpl implements ChatService {
     public PageResponseDTO<ChatMessageResponseDTO> getHistory(Long roomId, Long currentUserId, int page, int size) {
         assertMember(roomId, currentUserId);
         Pageable pageable = PageRequest.of(page, size);
-        return PageResponseDTO.of(
-            messageRepository.findRoomHistory(roomId, currentUserId, pageable).map(chatMapper::toMessageResponse)
-        );
+        Page<ChatMessage> msgPage = messageRepository.findRoomHistory(roomId, currentUserId, pageable);
+
+        List<Long> ids = msgPage.getContent().stream().map(ChatMessage::getId).collect(Collectors.toList());
+        Map<Long, List<MessageReaction>> rxMap = ids.isEmpty() ? Map.of()
+            : reactionRepository.findByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(r -> r.getMessage().getId()));
+
+        return PageResponseDTO.of(msgPage.map(msg -> {
+            ChatMessageResponseDTO dto = chatMapper.toMessageResponse(msg);
+            return dto.toBuilder().reactions(buildReactionSummaries(rxMap.getOrDefault(msg.getId(), List.of()), currentUserId)).build();
+        }));
+    }
+
+    @Override
+    @Transactional
+    public ChatMessageResponseDTO reactToMessage(Long roomId, Long messageId, String emoji, Long currentUserId) {
+        assertMember(roomId, currentUserId);
+        ChatMessage msg = messageRepository.findById(messageId)
+                .orElseThrow(() -> new NotFoundException("Message not found"));
+
+        Optional<MessageReaction> existing = reactionRepository.findByMessageIdAndUserId(messageId, currentUserId);
+        if (existing.isPresent()) {
+            if (existing.get().getEmoji().equals(emoji)) {
+                reactionRepository.delete(existing.get());
+            } else {
+                existing.get().setEmoji(emoji);
+                reactionRepository.save(existing.get());
+            }
+        } else {
+            User user = findUserOrThrow(currentUserId);
+            reactionRepository.save(MessageReaction.builder().message(msg).user(user).emoji(emoji).build());
+        }
+
+        List<MessageReaction> reactions = reactionRepository.findByMessageId(messageId);
+        return chatMapper.toMessageResponse(msg).toBuilder()
+                .reactions(buildReactionSummaries(reactions, currentUserId))
+                .build();
+    }
+
+    private List<MessageReactionSummaryDTO> buildReactionSummaries(List<MessageReaction> reactions, Long viewerId) {
+        Map<String, List<MessageReaction>> byEmoji = reactions.stream()
+                .collect(Collectors.groupingBy(MessageReaction::getEmoji));
+        return byEmoji.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> MessageReactionSummaryDTO.builder()
+                        .emoji(e.getKey())
+                        .count(e.getValue().size())
+                        .reactedByMe(e.getValue().stream().anyMatch(r -> r.getUser().getId().equals(viewerId)))
+                        .build())
+                .collect(Collectors.toList());
     }
 
     @Override
     @Transactional
     public void deleteMessage(Long messageId, Long currentUserId) {
-        messageRepository.findById(messageId)
+        ChatMessage msg = messageRepository.findById(messageId)
                 .orElseThrow(() -> new NotFoundException("Message not found: " + messageId));
         // Idempotent — skip if already deleted for this user
         if (!msgDeletionRepository.existsByMessageIdAndUserId(messageId, currentUserId)) {
-            User user    = findUserOrThrow(currentUserId);
-            ChatMessage msg = messageRepository.findById(messageId).get();
+            User user = findUserOrThrow(currentUserId);
             msgDeletionRepository.save(ChatMessageDeletion.builder().message(msg).user(user).build());
         }
     }
@@ -237,7 +284,7 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public ChatMessageResponseDTO unsendMessage(Long roomId, Long messageId, Long currentUserId) {
         assertMember(roomId, currentUserId);
-        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(1);
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(15);
         int rows = messageRepository.unsendMessage(messageId, currentUserId, cutoff);
         if (rows == 0) {
             throw new ForbiddenException("Cannot unsend: not your message or sent more than 1 minute ago");
@@ -265,14 +312,8 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public long getTotalUnreadCount(Long currentUserId) {
-        // Sum unread counts across all rooms — could be optimized with Redis counter
-        return roomRepository.findUserInbox(currentUserId, PageRequest.of(0, 100))
-                .stream()
-                .mapToLong(room -> {
-                    try { return getUnreadCount(room.getId(), currentUserId); }
-                    catch (Exception e) { return 0L; }
-                })
-                .sum();
+        Long count = memberRepository.countTotalUnread(currentUserId);
+        return count != null ? count : 0L;
     }
 
     @Override
@@ -374,11 +415,19 @@ public class ChatServiceImpl implements ChatService {
 
         List<ChatRoomMember> roomMembers = memberRepository.findByRoomIdAndIsDeletedFalse(room.getId());
         memberCount = roomMembers.size();
+
+        // Batch-load presence for all members in one query (was N queries before)
+        List<Long> memberUserIds = roomMembers.stream()
+                .map(m -> m.getUser().getId())
+                .collect(Collectors.toList());
+        Map<Long, Boolean> onlineMap = userPresenceRepository.findByUserIdIn(memberUserIds)
+                .stream()
+                .collect(Collectors.toMap(p -> p.getUser().getId(), p -> Boolean.TRUE.equals(p.getOnline())));
+
         members = roomMembers.stream()
                 .map(m -> {
                     UserSummaryDTO summary = userMapper.toSummary(m.getUser());
-                    userPresenceRepository.findByUserId(m.getUser().getId())
-                            .ifPresent(p -> summary.setOnline(p.getOnline()));
+                    summary.setOnline(onlineMap.getOrDefault(m.getUser().getId(), false));
                     return summary;
                 })
                 .collect(Collectors.toList());

@@ -35,9 +35,9 @@ export default function ProfilePage() {
     queryFn:  () => usersApi.getProfile(uId),
   });
 
-  // Sync follow state when user data loads
+  // Always sync follow state from fresh server data
   useEffect(() => {
-    if (user && isFollowing === null) {
+    if (user) {
       setIsFollowing(user.isFollowing ?? false);
       setIsRequested(user.isRequested ?? false);
     }
@@ -87,14 +87,12 @@ export default function ProfilePage() {
     setFollowLoading(true);
     try {
       const status = await usersApi.follow(uId);
+      await qc.refetchQueries({ queryKey: ['user', uId] });
       if (status === 'REQUESTED') {
-        setIsRequested(true);
         toast('Follow request sent', { icon: '⏳' });
       } else {
-        setIsFollowing(true);
         toast.success('Following!');
       }
-      qc.invalidateQueries({ queryKey: ['user', uId] });
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed');
     } finally { setFollowLoading(false); }
@@ -105,8 +103,7 @@ export default function ProfilePage() {
     setFollowLoading(true);
     try {
       await usersApi.unfollow(uId);
-      setIsFollowing(false);
-      qc.invalidateQueries({ queryKey: ['user', uId] });
+      await qc.refetchQueries({ queryKey: ['user', uId] });
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed');
     } finally { setFollowLoading(false); }

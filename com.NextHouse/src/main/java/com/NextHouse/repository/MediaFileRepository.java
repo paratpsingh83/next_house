@@ -17,6 +17,19 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, Long> {
     /** All media attached to a specific entity (post, activity, marketplace item, etc.). */
     List<MediaFile> findByEntityTypeAndEntityIdAndIsDeletedFalse(String entityType, Long entityId);
 
+    /** Batch: media for multiple entities of the same type — used for feed enrichment. */
+    @Query("""
+            SELECT m FROM MediaFile m
+            WHERE m.entityType = :entityType
+              AND m.entityId IN :entityIds
+              AND m.isDeleted = false
+            ORDER BY m.createdAt ASC
+            """)
+    List<MediaFile> findByEntityTypeAndEntityIdsAndIsDeletedFalse(
+            @Param("entityType") String entityType,
+            @Param("entityIds") List<Long> entityIds
+    );
+
     /** Media uploaded by a user (for profile gallery). */
     @Query("""
             SELECT m FROM MediaFile m

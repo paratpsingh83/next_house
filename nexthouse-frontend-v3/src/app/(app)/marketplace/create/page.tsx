@@ -68,7 +68,7 @@ export default function CreateMarketplaceItemPage() {
       for (const file of files) {
         const preview = URL.createObjectURL(file);
         setPreviews(prev => [...prev, preview]);
-        const media = await mediaApi.upload(file, 'MARKETPLACE_ITEM');
+        const media = await mediaApi.upload(file, 'MARKETPLACE');
         setMediaIds(prev => [...prev, media.id]);
       }
       toast.success('Photos uploaded!');

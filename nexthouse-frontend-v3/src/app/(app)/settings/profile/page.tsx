@@ -51,7 +51,7 @@ export default function EditProfilePage() {
     try {
       const preview = URL.createObjectURL(file);
       setAvatar(preview);
-      const media = await mediaApi.upload(file, 'USER_AVATAR');
+      const media = await mediaApi.upload(file, 'USER', me?.id);
       setAvatar(media.url);
       toast.success('Photo updated!');
     } catch { toast.error('Upload failed'); setAvatar(me?.profileImage ?? ''); }

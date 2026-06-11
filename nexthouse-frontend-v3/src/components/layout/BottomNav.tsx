@@ -1,15 +1,16 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Users, ShoppingBag, MessageCircle, Star } from 'lucide-react';
+import { Home, Users, ShoppingBag, MessageCircle, Star, Sparkles } from 'lucide-react';
 import { useAppSelector } from '@/store';
 
 const NAV_ITEMS = [
-  { href: '/feed',        icon: Home,          label: 'Home'   },
-  { href: '/neighbours',  icon: Users,         label: 'People' },
-  { href: '/communities', icon: Star,          label: 'Local'  },
-  { href: '/marketplace', icon: ShoppingBag,   label: 'Market' },
-  { href: '/chat',        icon: MessageCircle, label: 'Chat'   },
+  { href: '/feed',        icon: Home,          label: 'Home'    },
+  { href: '/neighbours',  icon: Users,         label: 'People'  },
+  { href: '/communities', icon: Star,          label: 'Local'   },
+  { href: '/discover',    icon: Sparkles,      label: 'For You' },
+  { href: '/marketplace', icon: ShoppingBag,   label: 'Market'  },
+  { href: '/chat',        icon: MessageCircle, label: 'Chat'    },
 ] as const;
 
 export default function BottomNav() {
@@ -30,7 +31,7 @@ export default function BottomNav() {
           >
             <div className="relative">
               {isActive && <div className="absolute -inset-1.5 bg-primary-100 rounded-xl -z-10"/>}
-              <Icon size={22} strokeWidth={isActive ? 2.5 : 1.8}/>
+              <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8}/>
               {badge > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 animate-pop-in">
                   {badge > 9 ? '9+' : badge}

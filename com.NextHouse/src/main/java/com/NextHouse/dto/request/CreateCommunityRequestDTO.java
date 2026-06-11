@@ -20,6 +20,7 @@ public class CreateCommunityRequestDTO {
     @NotBlank(message = "Community type is required")
     private String communityType;
 
+    @Builder.Default
     private Boolean privateCommunity = false;
     private Long neighborhoodId;
     private Long parentCommunityId;

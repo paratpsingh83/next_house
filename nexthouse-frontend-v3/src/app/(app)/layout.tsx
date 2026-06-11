@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { clearAuth } from '@/store/slices/authSlice';
+import { tokens } from '@/lib/apiClient';
 import { chatApi, notificationsApi, usersApi } from '@/api';
 import { setTotalUnread } from '@/store/slices/chatSlice';
-import { setUnread } from '@/store/slices/notifSlice';
+import { setUnread, setFollowReqCount } from '@/store/slices/notifSlice';
 import AppHeader from '@/components/layout/AppHeader';
 import BottomNav from '@/components/layout/BottomNav';
 import SlideMenu from '@/components/layout/SlideMenu';
@@ -15,8 +16,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const dispatch = useAppDispatch();
   const { isAuth, loading } = useAppSelector(s => s.auth);
-  const [menuOpen,       setMenuOpen]       = useState(false);
-  const [followReqCount, setFollowReqCount] = useState(0);
+  const followReqCount = useAppSelector(s => s.notif.followReqCount);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { if (!loading && !isAuth) router.replace('/login'); }, [isAuth, loading, router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
@@ -32,7 +33,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ]);
         dispatch(setTotalUnread(chat));
         dispatch(setUnread(notif));
-        setFollowReqCount(followReqs.length);
+        dispatch(setFollowReqCount(followReqs.length));
       } catch {}
     };
     fetchUnread();
@@ -41,6 +42,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [isAuth]);
 
   const handleLogout = () => {
+    tokens.clear();
     dispatch(clearAuth());
     router.replace('/login');
   };

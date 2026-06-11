@@ -130,13 +130,18 @@ public class SecurityConfig {
                         // ── Fully public ─────────────────────────────────────────────
                         .requestMatchers(
                                 "/api/v1/auth/**",
+                                "/api/v1/verification/address/digilocker/callback",
                                 "/actuator/health",
                                 "/actuator/info",
+                                "/ws/**"
+                        ).permitAll()
+
+                        // ── Swagger — admin only in production ────────────────────────
+                        .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
-                                "/v3/api-docs/**",
-                                "/ws/**"                     // WebSocket handshake
-                        ).permitAll()
+                                "/v3/api-docs/**"
+                        ).hasRole("ADMIN")
 
                         // ── Public GET endpoints ──────────────────────────────────────
                         .requestMatchers(HttpMethod.GET,

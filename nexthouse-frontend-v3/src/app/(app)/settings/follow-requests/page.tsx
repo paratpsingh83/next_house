@@ -3,13 +3,16 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, UserCheck, UserX, Loader2, Users } from 'lucide-react';
 import { usersApi } from '@/api';
+import { useAppDispatch } from '@/store';
+import { decrementFollowReqCount } from '@/store/slices/notifSlice';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
 
 export default function FollowRequestsPage() {
-  const router = useRouter();
-  const qc     = useQueryClient();
+  const router   = useRouter();
+  const qc       = useQueryClient();
+  const dispatch = useAppDispatch();
   const [processing, setProcessing] = useState<number | null>(null);
 
   const { data: requests = [], isLoading } = useQuery({
@@ -21,6 +24,7 @@ export default function FollowRequestsPage() {
     setProcessing(requestId);
     try {
       await usersApi.acceptFollowRequest(requestId);
+      dispatch(decrementFollowReqCount());
       qc.invalidateQueries({ queryKey: ['follow-requests'] });
       toast.success(`${name} is now following you`);
     } catch {
@@ -34,6 +38,7 @@ export default function FollowRequestsPage() {
     setProcessing(requestId);
     try {
       await usersApi.rejectFollowRequest(requestId);
+      dispatch(decrementFollowReqCount());
       qc.invalidateQueries({ queryKey: ['follow-requests'] });
       toast.success(`Request from ${name} removed`);
     } catch {

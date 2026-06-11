@@ -62,7 +62,7 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String JWT_COOKIE    = "jwt";
+    private static final String JWT_COOKIE    = "nh_access";
 
     /**
      * Paths that are completely public — skip token extraction entirely.

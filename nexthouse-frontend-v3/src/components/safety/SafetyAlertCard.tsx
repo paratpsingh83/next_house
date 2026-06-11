@@ -1,7 +1,10 @@
 'use client';
+import { useState } from 'react';
 import type { SafetyAlertResponse } from '@/types';
-import { CheckCircle, Siren, Shield } from 'lucide-react';
+import { CheckCircle, Siren, Shield, ShieldCheck, Flag } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { safetyApi } from '@/api';
+import toast from 'react-hot-toast';
 
 export const SEVERITY_COLOR: Record<string, string> = {
   LOW:      'bg-blue-50 text-blue-600 border-blue-100',
@@ -15,7 +18,29 @@ export const ALERT_EMOJI: Record<string, string> = {
   SUSPICIOUS: '👁️', MEDICAL: '🏥', INFRASTRUCTURE: '🏗️', OTHER: '⚠️',
 };
 
+const FALSE_REPORT_REASONS = ['Inaccurate', 'Already resolved', 'Spam', 'Not in my area', 'Other'];
+
 export function ActiveAlertCard({ alert: a, onResolve }: { alert: SafetyAlertResponse; onResolve: (id: number) => void }) {
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [reporting, setReporting] = useState(false);
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try { await safetyApi.verify(a.id); toast.success('Alert verified'); }
+    catch { toast.error('Failed to verify'); }
+    finally { setVerifying(false); }
+  };
+
+  const handleReport = async () => {
+    if (!reportReason) return toast.error('Select a reason');
+    setReporting(true);
+    try { await safetyApi.report(a.id, reportReason); toast.success('Reported'); setShowReport(false); }
+    catch { toast.error('Failed to report'); }
+    finally { setReporting(false); }
+  };
+
   return (
     <div className={`card p-4 space-y-3 border ${
       a.emergency ? 'border-red-300 bg-red-50/60' : (SEVERITY_COLOR[a.severity]?.split(' ')[2] ?? 'border-gray-100')
@@ -49,12 +74,58 @@ export function ActiveAlertCard({ alert: a, onResolve }: { alert: SafetyAlertRes
           </div>
         </div>
       </div>
-      <button
-        onClick={() => onResolve(a.id)}
-        className="text-xs text-gray-500 hover:text-green-600 border border-gray-200 hover:border-green-300 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
-      >
-        <CheckCircle size={12}/>Mark as Resolved
-      </button>
+
+      {/* Action buttons */}
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => onResolve(a.id)}
+          className="text-xs text-gray-500 hover:text-green-600 border border-gray-200 hover:border-green-300 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+        >
+          <CheckCircle size={12}/>Resolved
+        </button>
+        {!a.verified && (
+          <button
+            onClick={handleVerify}
+            disabled={verifying}
+            className="text-xs text-blue-600 border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <ShieldCheck size={12}/>{verifying ? 'Verifying…' : 'Verify Alert'}
+          </button>
+        )}
+        <button
+          onClick={() => setShowReport(r => !r)}
+          className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ml-auto"
+        >
+          <Flag size={12}/>False alert
+        </button>
+      </div>
+
+      {/* False report panel */}
+      {showReport && (
+        <div className="border border-red-100 rounded-xl p-3 space-y-2 bg-red-50/40">
+          <p className="text-xs font-semibold text-red-700">Why is this alert false?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {FALSE_REPORT_REASONS.map(r => (
+              <button
+                key={r}
+                onClick={() => setReportReason(r)}
+                className={`px-2.5 py-1 rounded-full text-xs border transition ${
+                  reportReason === r ? 'bg-red-500 text-white border-red-500' : 'border-red-200 text-red-600 bg-white'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleReport}
+            disabled={reporting || !reportReason}
+            className="w-full py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-600 disabled:opacity-50 transition"
+          >
+            {reporting ? 'Submitting…' : 'Submit Report'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

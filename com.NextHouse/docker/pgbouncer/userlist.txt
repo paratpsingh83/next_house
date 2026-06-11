@@ -1,0 +1,7 @@
+# PgBouncer user list — DEV ONLY (plain text passwords, Docker network only)
+# Format: "username" "password"
+#
+# Production: replace with SCRAM-SHA-256 hashes or use auth_query (see K8s config)
+# Generate SCRAM hash: psql -c "SELECT pg_create_user_mapping(...);" or use pgbouncer-auth-query
+"nexthouse" "nexthouse_dev_pass"
+"pgbouncer" "pgbouncer_dev_pass"

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns="http://www.ehcache.org/v3"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.ehcache.org/v3 http://www.ehcache.org/schema/ehcache-core-3.0.xsd">
+
+    <!-- User entity: read-heavy, changes on profile update -->
+    <cache alias="com.NextHouse.entity.User">
+        <expiry><ttl unit="minutes">10</ttl></expiry>
+        <heap unit="entries">5000</heap>
+    </cache>
+
+    <!-- Community entity: changes on edit/delete -->
+    <cache alias="com.NextHouse.entity.Community">
+        <expiry><ttl unit="minutes">15</ttl></expiry>
+        <heap unit="entries">2000</heap>
+    </cache>
+
+    <!-- Neighborhood entity: geographic boundaries/names never change at runtime -->
+    <cache alias="com.NextHouse.entity.Neighborhood">
+        <expiry><ttl unit="hours">24</ttl></expiry>
+        <heap unit="entries">1000</heap>
+    </cache>
+
+</config>

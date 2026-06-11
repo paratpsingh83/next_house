@@ -4,12 +4,19 @@ import { usePathname } from 'next/navigation';
 import {
   X, ChevronRight, Settings, LogOut,
   Zap, Package, Star, ListOrdered, CalendarCheck, Bookmark, Shield,
+  Sparkles, ShieldAlert,
 } from 'lucide-react';
 import { useAppSelector } from '@/store';
 
 const MENU_SECTIONS = [
   {
-    title: 'Discover',
+    title: 'For You',
+    items: [
+      { href: '/discover',      icon: Sparkles,     label: 'Discover'         },
+    ],
+  },
+  {
+    title: 'Explore',
     items: [
       { href: '/activities',    icon: Zap,          label: 'Activities'       },
       { href: '/borrow',        icon: Package,      label: 'Borrow & Lend'   },
@@ -55,7 +62,7 @@ export default function SlideMenu({ onClose, onLogout }: Props) {
         {/* Profile header */}
         <div className="bg-gradient-to-br from-primary-500 to-teal-500 px-5 pt-12 pb-5 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-white font-black text-lg">NexHouse</span>
+            <span className="text-white font-black text-lg">NextHouse</span>
             <button onClick={onClose} className="text-white/80 hover:text-white p-1">
               <X size={20}/>
             </button>
@@ -108,6 +115,15 @@ export default function SlideMenu({ onClose, onLogout }: Props) {
               <span className="text-sm font-medium">Settings</span>
             </div>
           </Link>
+          {/* Admin link — only shown to admins */}
+          {user?.role === 'ADMIN' && (
+            <Link href="/admin" onClick={onClose}>
+              <div className="flex items-center gap-3 px-5 py-3 hover:bg-yellow-50 transition text-yellow-700">
+                <ShieldAlert size={18} className="text-yellow-500"/>
+                <span className="text-sm font-medium">Admin Panel</span>
+              </div>
+            </Link>
+          )}
           <button onClick={onLogout} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-red-50 transition text-red-500">
             <LogOut size={18}/>
             <span className="text-sm font-medium">Sign out</span>

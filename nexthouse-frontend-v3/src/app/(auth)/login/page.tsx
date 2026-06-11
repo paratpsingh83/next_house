@@ -6,10 +6,11 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { setCredentials } from '@/store/slices/authSlice';
 import { authApi } from '@/api';
+import { tokens } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 const schema = z.object({
@@ -21,8 +22,11 @@ type Form = z.infer<typeof schema>;
 export default function LoginPage() {
   const router   = useRouter();
   const dispatch = useAppDispatch();
-  const [showPwd, setShowPwd] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [showPwd,         setShowPwd]         = useState(false);
+  const [loading,         setLoading]         = useState(false);
+  const [twoFactorToken,  setTwoFactorToken]  = useState<string | null>(null);
+  const [otp,             setOtp]             = useState('');
+  const [otpLoading,      setOtpLoading]      = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm<Form>({ resolver: zodResolver(schema) });
 
@@ -35,41 +39,103 @@ export default function LoginPage() {
         deviceType: 'WEB',
       });
 
-      if (res.twoFactorRequired) {
-        toast('2FA is enabled. Enter your OTP to continue.');
+      if (res.twoFactorRequired && res.twoFactorToken) {
+        setTwoFactorToken(res.twoFactorToken);
         return;
       }
 
-      if (res.user && res.accessToken && res.refreshToken) {
-        dispatch(setCredentials({
-          user:         res.user,
-          accessToken:  res.accessToken,
-          refreshToken: res.refreshToken,
-        }));
+      if (res.user && res.accessToken) {
+        tokens.setWsToken(res.accessToken);
+        dispatch(setCredentials({ user: res.user }));
         toast.success(`Welcome back, ${res.user.name}!`);
         router.push('/feed');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.message ?? 'Login failed. Please try again.';
-      toast.error(msg);
+      toast.error(err?.response?.data?.message ?? 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const onVerify2FA = async () => {
+    if (!twoFactorToken || otp.trim().length < 4) return;
+    setOtpLoading(true);
+    try {
+      const res = await authApi.verify2FA(twoFactorToken, otp.trim());
+      if (res.user && res.accessToken) {
+        tokens.setWsToken(res.accessToken);
+        dispatch(setCredentials({ user: res.user }));
+        toast.success(`Welcome back, ${res.user.name}!`);
+        router.push('/feed');
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Invalid OTP. Please try again.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // ── 2FA step ────────────────────────────────────────────────────────────────
+  if (twoFactorToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-[400px]">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary-500 shadow-lg mb-4">
+              <ShieldCheck className="text-white" size={28} />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">Two-Factor Authentication</h1>
+            <p className="text-gray-500 mt-1">Enter the OTP sent to your phone</p>
+          </div>
+
+          <div className="card p-8 space-y-5">
+            <div>
+              <label className="label">One-Time Password</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className="input text-center text-2xl tracking-[0.5em]"
+                autoFocus
+              />
+            </div>
+
+            <button
+              onClick={onVerify2FA}
+              disabled={otpLoading || otp.length < 4}
+              className="btn-primary w-full py-3 text-base"
+            >
+              {otpLoading ? <><Loader2 size={18} className="animate-spin" /> Verifying…</> : 'Verify'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTwoFactorToken(null)}
+              className="w-full text-sm text-gray-500 hover:text-gray-700 text-center"
+            >
+              Back to login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Login step ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-[400px]">
-        {/* Logo */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary-500 shadow-lg mb-4">
             <span className="text-white text-2xl font-bold">N</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
-          <p className="text-gray-500 mt-1">Sign in to NexHouse</p>
+          <p className="text-gray-500 mt-1">Sign in to NextHouse</p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="card p-8 space-y-5">
           <div>
             <label className="label">Email, phone, or username</label>

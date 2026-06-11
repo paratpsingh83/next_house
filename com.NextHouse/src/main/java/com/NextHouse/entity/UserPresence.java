@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 @SuperBuilder
 public class UserPresence extends BaseEntity {
 
+    @Builder.Default
     @Column(name = "online", nullable = false)
     private Boolean online = false;
 

@@ -121,4 +121,19 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
             GROUP BY am.activity.id
             """)
     List<Object[]> countApprovedMembersForActivities(@Param("ids") Collection<Long> ids);
+
+    /** Activities starting within a time window that haven't had a reminder sent yet. */
+    @Query("""
+            SELECT a FROM Activity a
+            WHERE a.isDeleted = false
+              AND a.reminderSent = false
+              AND a.activityTime >= :from
+              AND a.activityTime < :to
+              AND a.status IN (com.NextHouse.constant.ActivityStatus.PUBLISHED, com.NextHouse.constant.ActivityStatus.FULL)
+            """)
+    List<Activity> findActivitiesNeedingReminder(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    @Modifying
+    @Query("UPDATE Activity a SET a.reminderSent = true WHERE a.id IN :ids")
+    void markRemindersSent(@Param("ids") Collection<Long> ids);
 }

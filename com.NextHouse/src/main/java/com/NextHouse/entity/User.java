@@ -1,12 +1,15 @@
 package com.NextHouse.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 @Entity
 @Table(
         name = "users",
@@ -30,7 +33,7 @@ public class User extends GeoBaseEntity {   // ← FIX: was "extends BaseEntity"
     @Column(name = "username", unique = true, nullable = false, length = 50)
     private String username;
 
-    @Column(name = "phone_number", unique = true, nullable = false, length = 20)
+    @Column(name = "phone_number", unique = true, nullable = true, length = 20)
     private String phoneNumber;
 
     @Column(name = "email", unique = true, length = 150)
@@ -86,6 +89,21 @@ public class User extends GeoBaseEntity {   // ← FIX: was "extends BaseEntity"
 
     @Column(name = "identity_doc_media_id")
     private Long identityDocMediaId;
+
+    @Column(name = "kyc_name", length = 200)
+    private String kycName;
+
+    @Column(name = "kyc_dob", length = 20)
+    private String kycDob;
+
+    @Column(name = "kyc_gender", length = 10)
+    private String kycGender;
+
+    @Column(name = "kyc_verified_at")
+    private java.time.LocalDateTime kycVerifiedAt;
+
+    @Column(name = "digilocker_state", length = 100)
+    private String digilockerState;
 
     @Builder.Default
     @Column(name = "banned", nullable = false)

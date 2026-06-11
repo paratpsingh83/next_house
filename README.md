@@ -1,6 +1,6 @@
 # NextHouse — Neighbourhood Social Platform
 
-A full-stack neighbourhood community app. Residents connect, share posts, borrow items, buy/sell in the marketplace, organise local activities, form communities, and raise safety alerts — all scoped to their verified neighbourhood.
+A full-stack neighbourhood community platform. Residents connect, share posts, borrow items, buy/sell in the marketplace, organise local activities, form communities, and raise safety alerts — all scoped to their verified neighbourhood.
 
 ---
 
@@ -12,14 +12,16 @@ A full-stack neighbourhood community app. Residents connect, share posts, borrow
 |---|---|
 | Language | Java 21 |
 | Framework | Spring Boot 3.3.5 |
-| Security | Spring Security + JWT (jjwt 0.12.6) |
-| Database | PostgreSQL with PostGIS (spatial queries) |
+| Security | Spring Security + JWT (httpOnly cookies) |
+| Database | PostgreSQL 16 + PostGIS 3 (spatial queries) |
+| Connection Pool | PgBouncer (transaction mode — 400 app conns → 25 DB conns) |
 | ORM | Hibernate / Spring Data JPA + Hibernate Spatial |
 | Migrations | Flyway |
-| Cache | Redis (Lettuce client) |
+| Cache L1 | Redis 7 (Lettuce client — Spring @Cacheable) |
+| Cache L2 | Hibernate JCache + Caffeine (entity-level) |
 | Messaging | Apache Kafka |
-| Real-time | WebSocket (STOMP over SockJS) |
-| File Storage | AWS S3 (via AWS SDK v2) |
+| Real-time | WebSocket STOMP via RabbitMQ broker relay |
+| File Storage | AWS S3 (AWS SDK v2) + CDN |
 | Push Notifications | Firebase Admin SDK |
 | Email | Spring Mail (AWS SES) |
 | Image Processing | Thumbnailator |
@@ -34,14 +36,49 @@ A full-stack neighbourhood community app. Residents connect, share posts, borrow
 |---|---|
 | Language | TypeScript |
 | Framework | Next.js 14 (App Router) |
-| Styling | Tailwind CSS v3 + `@tailwindcss/forms` |
+| Styling | Tailwind CSS v3 |
 | State | Redux Toolkit + React Query (TanStack v5) |
 | Forms | React Hook Form v7 + Zod |
-| HTTP Client | Axios |
+| HTTP Client | Axios (`withCredentials: true` — httpOnly cookie auth) |
 | WebSocket | `@stomp/stompjs` + SockJS |
 | Icons | Lucide React |
 | Toasts | React Hot Toast |
 | Dates | date-fns |
+
+---
+
+## Features
+
+| Feature | Status |
+|---|---|
+| Register / Login / OTP / 2FA / OAuth2 | ✅ |
+| JWT via httpOnly cookies (XSS-safe) | ✅ |
+| Stories (image / video / text, 24h expiry, auto-advance timer) | ✅ |
+| Story replies → opens DM | ✅ |
+| Feed (following / nearby / trending) | ✅ |
+| Posts with reactions, comments, hashtags, media | ✅ |
+| Post repost / share with optional caption | ✅ |
+| Saved posts collections | ✅ |
+| Community posts feed | ✅ |
+| Seller marketplace (buy / sell / free) | ✅ |
+| Seller ratings & reviews | ✅ |
+| Borrow requests | ✅ |
+| Local activities + join / approval flow | ✅ |
+| Activity reminders (1 h before, scheduled job) | ✅ |
+| Communities (public / private, roles) | ✅ |
+| Safety alerts (emergency fanout via Kafka) | ✅ |
+| Direct chat + group chat | ✅ |
+| Chat image sending | ✅ |
+| Real-time typing indicators + presence | ✅ |
+| Notifications (push + in-app, per-type preferences) | ✅ |
+| Follow / unfollow / follow requests (private accounts) | ✅ |
+| Block / unblock users | ✅ |
+| Address & identity verification (DigiLocker) | ✅ |
+| Neighbourhood detection (PostGIS) | ✅ |
+| Nearby search (users, posts, activities, marketplace) | ✅ |
+| Admin panel (users, moderation, reports) | ✅ |
+| Global search (multi-entity, autocomplete, history) | ✅ |
+| Recommendations (posts, activities, communities, users) | ✅ |
 
 ---
 
@@ -52,15 +89,50 @@ A full-stack neighbourhood community app. Residents connect, share posts, borrow
 | Java | 21+ |
 | Maven | 3.9+ |
 | Node.js | 18+ |
-| PostgreSQL | 15+ with PostGIS extension |
-| Redis | 7+ |
-| Apache Kafka | 3+ (optional for local dev — disable Kafka listener if not available) |
+| Docker + Docker Compose | 24+ |
+| PostgreSQL | 16+ with PostGIS (or use Docker) |
+| Redis | 7+ (or use Docker) |
 
 ---
 
-## Getting Started
+## Quick Start (Docker Compose)
 
-### 1. Database setup
+The easiest way to run the full stack locally:
+
+```bash
+# 1. Copy and fill env file
+cp com.NextHouse/docker/.env.example com.NextHouse/docker/.env
+# Edit .env — fill JWT_SECRET, AWS credentials, etc.
+
+# 2. Start all infrastructure + API
+cd com.NextHouse/docker
+docker-compose up -d
+
+# 3. Start frontend
+cd ../../nexthouse-frontend-v3
+npm install
+npm run dev
+```
+
+Services started by Docker Compose:
+
+| Service | Port | Description |
+|---|---|---|
+| nexthouse-api | 8080 | Spring Boot REST + WebSocket |
+| postgres | 5432 | PostgreSQL 16 + PostGIS |
+| pgbouncer | 5433 | Connection pooler (app connects via 5432 internally) |
+| redis | 6379 | Cache + sessions |
+| kafka | 9092 | Event streaming |
+| rabbitmq | 15672 | Management UI (STOMP on 61613) |
+
+Swagger UI: **http://localhost:8080/swagger-ui.html**  
+Frontend: **http://localhost:3000**
+
+---
+
+## Manual Setup (IDE / no Docker)
+
+### 1. Database
 
 ```sql
 CREATE USER nexthouse WITH PASSWORD 'changeme';
@@ -74,13 +146,11 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 ```bash
 cd com.NextHouse
 
-# Run with dev profile (disables Firebase, rate-limiting; enables debug logging)
+# Dev profile: Firebase disabled, rate-limiting off, SQL logging on
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 Backend starts on **http://localhost:8080**
-
-Swagger UI available at **http://localhost:8080/swagger-ui.html**
 
 ### 3. Frontend
 
@@ -90,16 +160,13 @@ npm install
 npm run dev
 ```
 
-Frontend starts on **http://localhost:3000**
-
-### 4. Environment variables
-
 Create `nexthouse-frontend-v3/.env.local`:
-
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8080
 NEXT_PUBLIC_WS_URL=http://localhost:8080
 ```
+
+Frontend starts on **http://localhost:3000**
 
 ---
 
@@ -108,300 +175,302 @@ NEXT_PUBLIC_WS_URL=http://localhost:8080
 | Profile | Purpose |
 |---|---|
 | *(default)* | Production — all env vars required, Firebase active, rate-limiting on |
-| `dev` | Local development — Firebase disabled, rate-limiting off, SQL logging on |
-| `test` | JUnit tests — Kafka listeners off, Flyway clean enabled |
+| `dev` | Local — Firebase disabled, rate-limiting off, SQL logging on, COOKIE_SECURE=false |
+| `test` | JUnit — Kafka listeners off, Flyway clean enabled |
+
+---
+
+## Environment Variables (Backend)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_HOST` | `localhost` | PostgreSQL / PgBouncer host |
+| `DB_PORT` | `5432` | Port |
+| `DB_NAME` | `nexthouse_db` | Database name |
+| `DB_USERNAME` | `nexthouse` | DB user |
+| `DB_PASSWORD` | `changeme` | DB password |
+| `REDIS_HOST` | `localhost` | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_PASSWORD` | *(empty)* | Redis password |
+| `KAFKA_BROKERS` | `localhost:9092` | Kafka bootstrap servers |
+| `RABBITMQ_HOST` | — | RabbitMQ host (STOMP relay) |
+| `RABBITMQ_STOMP_PORT` | `61613` | STOMP port |
+| `RABBITMQ_USER` | `guest` | RabbitMQ user |
+| `RABBITMQ_PASS` | `guest` | RabbitMQ password |
+| `JWT_SECRET` | dev key | **Must change in production** (min 256-bit base64) |
+| `COOKIE_SECURE` | `true` | Set `false` for local HTTP dev |
+| `SERVER_PORT` | `8080` | HTTP port |
+| `AWS_ACCESS_KEY_ID` | — | AWS credentials for S3 |
+| `AWS_SECRET_ACCESS_KEY` | — | AWS credentials for S3 |
+| `AWS_REGION` | `ap-southeast-1` | AWS region |
+| `S3_BUCKET` | `nexthouse-media` | S3 bucket |
+| `CDN_BASE_URL` | `https://cdn.nexthouse.app` | CDN prefix |
+| `FIREBASE_CREDENTIALS_FILE` | `classpath:firebase-service-account.json` | Set to `disabled` locally |
+| `FIREBASE_PROJECT_ID` | — | Firebase project ID |
+| `SES_USERNAME` | — | AWS SES SMTP username |
+| `SES_PASSWORD` | — | AWS SES SMTP password |
+| `DIGILOCKER_CLIENT_ID` | — | DigiLocker OAuth client ID |
+| `DIGILOCKER_CLIENT_SECRET` | — | DigiLocker OAuth secret |
 
 ---
 
 ## API Reference
 
-Base path: `/api/v1`  
-All endpoints require a Bearer token unless noted otherwise.
+Base path: `/api/v1`
 
----
+Auth: JWT delivered as `nh_access` httpOnly cookie (set automatically on login). Mobile clients can also use `Authorization: Bearer <token>` header.
 
 ### Authentication — `/auth`
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | `/auth/register` | Public | Register new user (optional GPS + FCM token) |
-| POST | `/auth/login` | Public | Login with email/phone/username + password |
-| POST | `/auth/logout` | Required | Logout current device |
-| POST | `/auth/logout-all` | Required | Logout all devices |
-| POST | `/auth/refresh-token` | Public | Rotate and refresh access token |
-| POST | `/auth/otp/request` | Public | Request OTP (REGISTRATION / LOGIN / PASSWORD_RESET / PHONE_VERIFICATION / TWO_FACTOR_AUTH) |
-| POST | `/auth/otp/verify` | Public | Verify OTP; locks after 5 failed attempts |
-| POST | `/auth/password/forgot` | Public | Trigger password reset OTP |
-| POST | `/auth/password/reset` | Public | Reset password with OTP token |
-| POST | `/auth/password/change` | Required | Change password — revokes all sessions |
-| POST | `/auth/oauth2` | Public | Social login (Google / Facebook / Apple) |
-| POST | `/auth/2fa/enable` | Required | Enable 2FA (requires verified phone) |
-| POST | `/auth/2fa/disable` | Required | Disable 2FA |
-| POST | `/auth/2fa/verify` | Public | Complete 2FA login |
-
----
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/register` | Register (optional GPS + FCM token) |
+| POST | `/auth/login` | Login — sets `nh_access` + `nh_refresh` cookies |
+| POST | `/auth/logout` | Logout — clears cookies |
+| POST | `/auth/logout-all` | Logout all devices |
+| POST | `/auth/refresh-token` | Rotate tokens — reads `nh_refresh` cookie |
+| POST | `/auth/otp/request` | Request OTP |
+| POST | `/auth/otp/verify` | Verify OTP |
+| POST | `/auth/password/forgot` | Trigger password reset |
+| POST | `/auth/password/reset` | Reset password with OTP token |
+| POST | `/auth/password/change` | Change password — revokes all sessions |
+| POST | `/auth/oauth2` | Social login (Google / Facebook / Apple) |
+| POST | `/auth/2fa/enable` | Enable 2FA |
+| POST | `/auth/2fa/disable` | Disable 2FA |
+| POST | `/auth/2fa/verify` | Complete 2FA login |
 
 ### Users — `/users`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/users/me` | Get my profile |
-| PUT | `/users/me` | Update my profile |
-| PATCH | `/users/me/location` | Update GPS coordinates; auto-reassigns neighbourhood |
-| DELETE | `/users/me` | Soft-delete account (retained 30 days) |
-| GET | `/users/{userId}` | Get a user's public profile |
-| GET | `/users/nearby` | Find nearby verified neighbours within radius |
+| GET | `/users/me` | My profile |
+| PUT | `/users/me` | Update profile |
+| PATCH | `/users/me/location` | Update GPS |
+| DELETE | `/users/me` | Soft-delete account |
+| GET | `/users/{userId}` | Public profile (1 optimised query) |
+| GET | `/users/nearby` | Nearby verified neighbours |
 | GET | `/users/suggestions` | Friend-of-friends suggestions |
-| GET | `/users/search` | Search users by name or username |
-| POST | `/users/{userId}/follow` | Follow a user |
-| DELETE | `/users/{userId}/follow` | Unfollow a user |
-| GET | `/users/{userId}/followers` | Get followers list |
-| GET | `/users/{userId}/following` | Get following list |
-| POST | `/users/{userId}/block` | Block user (auto-unfollows both directions) |
+| GET | `/users/search` | Search by name / username |
+| POST | `/users/{userId}/follow` | Follow user |
+| DELETE | `/users/{userId}/follow` | Unfollow user |
+| GET | `/users/{userId}/followers` | Followers list |
+| GET | `/users/{userId}/following` | Following list |
+| POST | `/users/{userId}/block` | Block user |
 | DELETE | `/users/{userId}/block` | Unblock user |
-
----
+| GET | `/users/me/blocked` | My blocked users list |
+| GET | `/users/me/follow-requests` | Incoming follow requests |
+| POST | `/users/me/follow-requests/{requestId}/accept` | Accept follow request |
+| DELETE | `/users/me/follow-requests/{requestId}` | Reject follow request |
 
 ### Posts — `/posts`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/posts` | Create a post |
-| GET | `/posts/{postId}` | Get post details |
+| POST | `/posts` | Create post |
+| GET | `/posts/{postId}` | Post detail |
 | PUT | `/posts/{postId}` | Update post |
 | DELETE | `/posts/{postId}` | Delete post |
+| POST | `/posts/{postId}/repost` | Repost to feed (optional caption) |
 | POST | `/posts/{postId}/report` | Report post |
-| GET | `/posts/feed/following` | Feed from followed users |
-| GET | `/posts/feed/nearby` | Feed of nearby posts (GPS radius) |
-| GET | `/posts/feed/trending` | Trending posts in a neighbourhood |
-| GET | `/posts/feed/community/{communityId}` | Posts in a community |
-| GET | `/posts/user/{userId}` | All posts by a user |
-| GET | `/posts/hashtag/{hashtag}` | Posts by hashtag |
-| POST | `/posts/{postId}/react` | Add reaction (LIKE / HEART / HELPFUL / CELEBRATE / CURIOUS) |
+| GET | `/posts/feed/following` | Following feed |
+| GET | `/posts/feed/nearby` | Nearby feed (GPS radius) |
+| GET | `/posts/feed/trending` | Trending feed |
+| GET | `/posts/feed/community/{communityId}` | Community feed |
+| GET | `/posts/user/{userId}` | User's posts |
+| GET | `/posts/hashtag/{hashtag}` | Posts by hashtag (indexed) |
+| POST | `/posts/{postId}/react` | React (LIKE / HEART / HELPFUL / CELEBRATE / CURIOUS) |
 | DELETE | `/posts/{postId}/react` | Remove reaction |
 | POST | `/posts/{postId}/save` | Save post |
 | DELETE | `/posts/{postId}/save` | Unsave post |
-| GET | `/posts/saved` | Get saved posts |
+| GET | `/posts/saved` | Saved posts |
 | POST | `/posts/{postId}/share` | Record share |
-| GET | `/posts/{postId}/comments` | Get comments |
+| GET | `/posts/{postId}/comments` | Comments |
 | POST | `/posts/{postId}/comments` | Add comment |
-| GET | `/posts/comments/{commentId}/replies` | Get replies |
+| GET | `/posts/comments/{commentId}/replies` | Replies |
 | PUT | `/posts/comments/{commentId}` | Update comment |
 | DELETE | `/posts/comments/{commentId}` | Delete comment |
 | POST | `/posts/comments/{commentId}/like` | Like comment |
 
----
+### Stories — `/stories`
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/stories` | Create story (IMAGE / VIDEO / TEXT) |
+| GET | `/stories/feed` | Stories feed (own + following) |
+| GET | `/stories/user/{userId}` | Stories by user |
+| DELETE | `/stories/{storyId}` | Delete story |
+| POST | `/stories/{storyId}/view` | Record view |
 
 ### Activities — `/activities`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/activities` | Create local activity/event |
-| GET | `/activities/{activityId}` | Get activity details |
-| PUT | `/activities/{activityId}` | Update activity (host only) |
-| DELETE | `/activities/{activityId}` | Cancel activity (host only) |
-| GET | `/activities/nearby` | Find nearby activities (GPS + optional type filter) |
-| GET | `/activities/community/{communityId}` | Upcoming activities in a community |
-| GET | `/activities/my/hosting` | Activities I'm hosting |
-| GET | `/activities/my/joined` | Activities I've joined |
-| POST | `/activities/{activityId}/join` | Join activity |
-| DELETE | `/activities/{activityId}/join` | Leave activity |
-| GET | `/activities/{activityId}/members` | Get members (filter by join status) |
-| POST | `/activities/{activityId}/members/{memberId}/approve` | Approve join request (host) |
-| POST | `/activities/{activityId}/members/{memberId}/reject` | Reject join request (host) |
+| POST | `/activities` | Create activity |
+| GET | `/activities/{activityId}` | Activity detail |
+| PUT | `/activities/{activityId}` | Update (host only) |
+| DELETE | `/activities/{activityId}` | Cancel (host only) |
+| GET | `/activities/nearby` | Nearby activities |
+| GET | `/activities/community/{communityId}` | Community activities |
+| GET | `/activities/my/hosting` | Activities I host |
+| GET | `/activities/my/joined` | Activities I joined |
+| POST | `/activities/{activityId}/join` | Join |
+| DELETE | `/activities/{activityId}/join` | Leave |
+| GET | `/activities/{activityId}/members` | Members list |
+| POST | `/activities/{activityId}/members/{memberId}/approve` | Approve join request |
+| POST | `/activities/{activityId}/members/{memberId}/reject` | Reject join request |
 
 Activity types: `SOCIAL` `SPORTS` `LEARNING` `VOLUNTEERING` `FOOD` `ARTS` `OUTDOOR` `NEIGHBORHOOD_WATCH` `OTHER`
-
----
 
 ### Communities — `/communities`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/communities` | Create community (creator becomes OWNER) |
-| GET | `/communities/{communityId}` | Get community details |
-| PUT | `/communities/{communityId}` | Update settings (ADMIN+) |
-| DELETE | `/communities/{communityId}` | Delete community (OWNER) |
-| GET | `/communities/nearby` | Nearby communities ordered by distance |
+| POST | `/communities` | Create community |
+| GET | `/communities/{communityId}` | Community detail |
+| PUT | `/communities/{communityId}` | Update (ADMIN+) |
+| DELETE | `/communities/{communityId}` | Delete (OWNER) |
+| GET | `/communities/nearby` | Nearby communities |
 | GET | `/communities/my` | My communities |
-| GET | `/communities/search` | Search communities |
-| POST | `/communities/{communityId}/join` | Join (auto-approve public, pending for private) |
-| DELETE | `/communities/{communityId}/join` | Leave community |
-| GET | `/communities/{communityId}/members` | Get members (filter by role) |
-| POST | `/communities/{communityId}/members/{memberId}/approve` | Approve pending member (MODERATOR+) |
-| DELETE | `/communities/{communityId}/members/{memberId}` | Kick member (MODERATOR+) |
-| PATCH | `/communities/{communityId}/members/{memberId}/role` | Update member role (OWNER) |
+| GET | `/communities/search` | Search |
+| POST | `/communities/{communityId}/join` | Join |
+| DELETE | `/communities/{communityId}/join` | Leave |
+| GET | `/communities/{communityId}/members` | Members |
+| POST | `/communities/{communityId}/members/{memberId}/approve` | Approve member |
+| DELETE | `/communities/{communityId}/members/{memberId}` | Kick member |
+| PATCH | `/communities/{communityId}/members/{memberId}/role` | Change role |
 
 Member roles: `OWNER` `ADMIN` `MODERATOR` `MEMBER`
-
----
 
 ### Chat — `/chat`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/chat/inbox` | Chat inbox sorted by most recent message |
-| GET | `/chat/unread-count` | Total unread count (all rooms) |
-| POST | `/chat/direct/{otherUserId}` | Get or create direct chat room |
+| GET | `/chat/inbox` | Inbox (sorted by last message) |
+| GET | `/chat/unread-count` | Total unread count |
+| POST | `/chat/direct/{otherUserId}` | Get or create DM room |
 | POST | `/chat/group` | Create group chat |
-| GET | `/chat/rooms/{roomId}` | Room details + member list |
-| POST | `/chat/rooms/{roomId}/members/{userId}` | Add member (room ADMIN) |
-| DELETE | `/chat/rooms/{roomId}/members/{userId}` | Remove member (room ADMIN) |
-| PATCH | `/chat/rooms/{roomId}/mute` | Mute / unmute room |
-| GET | `/chat/rooms/{roomId}/messages` | Paginated chat history (newest first) |
-| POST | `/chat/rooms/{roomId}/messages` | Send message (REST fallback) |
-| DELETE | `/chat/rooms/{roomId}/messages/{messageId}` | Soft-delete message |
-| POST | `/chat/rooms/{roomId}/read` | Mark room as read |
-| GET | `/chat/rooms/{roomId}/unread-count` | Unread count for one room |
+| GET | `/chat/rooms/{roomId}` | Room details + members |
+| POST | `/chat/rooms/{roomId}/members/{userId}` | Add member |
+| DELETE | `/chat/rooms/{roomId}/members/{userId}` | Remove member |
+| PATCH | `/chat/rooms/{roomId}/mute` | Mute / unmute |
+| GET | `/chat/rooms/{roomId}/messages` | Chat history |
+| DELETE | `/chat/rooms/{roomId}/messages/{messageId}` | Delete message |
+| POST | `/chat/rooms/{roomId}/read` | Mark as read |
 
----
+Message types: `TEXT` `IMAGE`
 
 ### Notifications — `/notifications`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/notifications` | Paginated notifications (optionally unread only) |
-| GET | `/notifications/unread-count` | Unread count for bell badge |
-| POST | `/notifications/{notificationId}/read` | Mark single notification read |
+| GET | `/notifications` | Paginated notifications |
+| GET | `/notifications/unread-count` | Unread count |
+| POST | `/notifications/{id}/read` | Mark single read |
 | POST | `/notifications/read-all` | Mark all read |
-| DELETE | `/notifications/{notificationId}` | Delete notification |
-
----
+| DELETE | `/notifications/{id}` | Delete |
+| GET | `/notifications/preferences` | Get preferences |
+| PUT | `/notifications/preferences` | Update preferences |
 
 ### Marketplace — `/marketplace`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/marketplace` | Create listing (buy / sell / free) |
-| GET | `/marketplace/{itemId}` | Get listing details |
-| PUT | `/marketplace/{itemId}` | Update listing (seller only) |
-| DELETE | `/marketplace/{itemId}` | Delete listing |
-| PATCH | `/marketplace/{itemId}/sold` | Mark as sold (seller only) |
-| GET | `/marketplace/nearby` | Browse nearby listings (category + price filters) |
+| POST | `/marketplace` | Create listing |
+| GET | `/marketplace/{itemId}` | Listing detail |
+| PUT | `/marketplace/{itemId}` | Update (seller only) |
+| DELETE | `/marketplace/{itemId}` | Delete |
+| PATCH | `/marketplace/{itemId}/sold` | Mark sold |
+| GET | `/marketplace/nearby` | Browse nearby |
 | GET | `/marketplace/my` | My listings |
-| GET | `/marketplace/search` | Search by title/description |
-
----
+| GET | `/marketplace/search` | Search |
+| POST | `/marketplace/items/{itemId}/reviews` | Leave seller review |
+| GET | `/marketplace/sellers/{sellerId}/reviews` | Seller reviews |
+| GET | `/marketplace/sellers/{sellerId}/rating` | Rating summary |
+| DELETE | `/marketplace/reviews/{reviewId}` | Delete review |
 
 ### Safety Alerts — `/safety-alerts`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/safety-alerts` | Create alert (EMERGENCY flag triggers instant fanout) |
-| GET | `/safety-alerts/{alertId}` | Get alert details |
-| GET | `/safety-alerts/neighborhood/{neighborhoodId}` | Active alerts in neighbourhood |
-| GET | `/safety-alerts/nearby` | Active alerts within GPS radius |
+| POST | `/safety-alerts` | Create alert |
+| GET | `/safety-alerts/{alertId}` | Alert detail |
+| GET | `/safety-alerts/neighborhood/{neighborhoodId}` | Active alerts in area |
+| GET | `/safety-alerts/nearby` | Active alerts by GPS |
 | POST | `/safety-alerts/{alertId}/resolve` | Resolve alert |
-| POST | `/safety-alerts/{alertId}/verify` | Verify alert as legitimate |
-| POST | `/safety-alerts/{alertId}/report` | Report alert as false/inappropriate |
+| POST | `/safety-alerts/{alertId}/verify` | Verify alert |
+| POST | `/safety-alerts/{alertId}/report` | Report false alert |
 
-Severity levels: `LOW` `MEDIUM` `HIGH` `CRITICAL`
-
----
+Severity: `LOW` `MEDIUM` `HIGH` `CRITICAL`
 
 ### Borrow Requests — `/borrow-requests`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/borrow-requests` | Post a borrow request |
-| GET | `/borrow-requests/{requestId}` | Get request details |
-| GET | `/borrow-requests/neighborhood/{neighborhoodId}` | Browse requests in neighbourhood (filter by status) |
+| POST | `/borrow-requests` | Post a request |
+| GET | `/borrow-requests/{requestId}` | Request detail |
+| GET | `/borrow-requests/neighborhood/{neighborhoodId}` | Browse by area |
 | GET | `/borrow-requests/my` | My requests |
-| POST | `/borrow-requests/{requestId}/respond` | Volunteer to fulfil (sets status → IN_PROGRESS) |
-| POST | `/borrow-requests/{requestId}/close` | Close as fulfilled (requester only) |
-| DELETE | `/borrow-requests/{requestId}` | Cancel request (requester only) |
-
-Statuses: `OPEN` `IN_PROGRESS` `FULFILLED` `CANCELLED`
-
----
-
-### Neighbourhoods — `/neighborhoods`
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/neighborhoods/detect` | Detect neighbourhood from GPS (PostGIS) |
-| GET | `/neighborhoods/{neighborhoodId}` | Get neighbourhood details |
-| GET | `/neighborhoods/nearby` | Nearby neighbourhoods ordered by distance |
-| POST | `/neighborhoods/me/assign/{neighborhoodId}` | Manually set my primary neighbourhood |
-| POST | `/neighborhoods/{neighborhoodId}/verify` | *(ADMIN)* Verify neighbourhood |
-| POST | `/neighborhoods` | *(ADMIN)* Create neighbourhood |
-
----
+| POST | `/borrow-requests/{requestId}/respond` | Volunteer to fulfil |
+| POST | `/borrow-requests/{requestId}/close` | Close as fulfilled |
+| DELETE | `/borrow-requests/{requestId}` | Cancel |
 
 ### Search — `/search`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/search` | Global multi-entity search (users, posts, activities, communities, marketplace) |
-| GET | `/search/suggest` | Autocomplete suggestions |
-| GET | `/search/trending` | Top 20 trending keywords (last 24 h) — public |
-| GET | `/search/history` | My recent search queries |
-| DELETE | `/search/history` | Clear search history |
-| GET | `/search/users` | Search users only |
-| GET | `/search/posts` | Search posts by hashtag or keyword |
-| GET | `/search/activities` | Search activities |
-| GET | `/search/communities` | Search communities |
-| GET | `/search/marketplace` | Search marketplace listings |
-
----
+| GET | `/search` | Global multi-entity search |
+| GET | `/search/suggest` | Autocomplete |
+| GET | `/search/trending` | Top 20 trending keywords |
+| GET | `/search/history` | My search history |
+| DELETE | `/search/history` | Clear history |
+| GET | `/search/users` | Users only |
+| GET | `/search/posts` | Posts only |
+| GET | `/search/activities` | Activities only |
+| GET | `/search/communities` | Communities only |
+| GET | `/search/marketplace` | Marketplace only |
 
 ### Media — `/media`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/media/upload` | Upload image / video / PDF (multipart) |
-| GET | `/media/entity/{entityType}/{entityId}` | Get all media for an entity |
-| DELETE | `/media/{mediaId}` | Delete media (uploader only) |
+| POST | `/media/upload` | Upload image / video / PDF |
+| GET | `/media/entity/{entityType}/{entityId}` | Media for entity |
+| DELETE | `/media/{mediaId}` | Delete (uploader only) |
 
-Max upload size: **50 MB** per file, **55 MB** per request.
+Max upload: **50 MB** per file.
 
----
-
-### Recommendations — `/recommendations`
+### Admin — `/admin` *(ROLE_ADMIN)*
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/recommendations/posts` | Personalised post recommendations |
-| GET | `/recommendations/activities` | Activity recommendations |
-| GET | `/recommendations/communities` | Community recommendations |
-| GET | `/recommendations/users` | User recommendations |
-
----
-
-### Admin — `/admin` *(ROLE_ADMIN required)*
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/admin/dashboard` | Dashboard stats + moderation queue |
-| GET | `/admin/users` | List all users (filter by status / banned) |
+| GET | `/admin/dashboard` | Stats + moderation queue |
+| GET | `/admin/users` | All users |
 | POST | `/admin/users/{userId}/ban` | Ban user |
 | POST | `/admin/users/{userId}/unban` | Unban user |
-| DELETE | `/admin/users/{userId}` | Force-delete account |
-| GET | `/admin/moderation` | Moderation queue (ADMIN or MODERATOR) |
-| POST | `/admin/moderation/{queueId}/approve` | Approve queued content |
-| POST | `/admin/moderation/{queueId}/block` | Block and remove queued content |
-| GET | `/admin/reports` | All user reports (filter by status / entity type) |
-| POST | `/admin/reports/{reportId}/review` | Review report (ACTION_TAKEN or DISMISSED) |
-| POST | `/admin/neighborhoods/{neighborhoodId}/verify` | Verify neighbourhood |
+| DELETE | `/admin/users/{userId}` | Force-delete |
+| GET | `/admin/moderation` | Moderation queue |
+| POST | `/admin/moderation/{queueId}/approve` | Approve content |
+| POST | `/admin/moderation/{queueId}/block` | Block content |
+| GET | `/admin/reports` | User reports |
+| POST | `/admin/reports/{reportId}/review` | Review report |
 
 ---
 
 ## WebSocket (STOMP)
 
-Connect to: `ws://localhost:8080/ws` (SockJS fallback: `http://localhost:8080/ws`)
-
-Subscribe/publish topics:
+Connect to: `ws://localhost:8080/ws`  
+Broker relay: RabbitMQ (supports multi-pod horizontal scaling)
 
 | Direction | Destination | Description |
 |---|---|---|
-| PUBLISH | `/app/chat/rooms/{roomId}/send` | Send a chat message |
-| SUBSCRIBE | `/topic/rooms/{roomId}/messages` | Receive messages in a room |
+| PUBLISH | `/app/chat/rooms/{roomId}/send` | Send chat message (TEXT or IMAGE) |
+| SUBSCRIBE | `/topic/rooms/{roomId}/messages` | Receive messages |
 | PUBLISH | `/app/chat/rooms/{roomId}/typing` | Send typing indicator |
 | SUBSCRIBE | `/topic/rooms/{roomId}/typing` | Receive typing indicators |
 | PUBLISH | `/app/presence/heartbeat` | Refresh online status |
-| PUBLISH | `/app/chat/rooms/{roomId}/read` | Mark room as read |
-| SUBSCRIBE | `/user/queue/notifications` | Personal real-time notifications |
-| SUBSCRIBE | `/user/queue/presence` | Online/offline presence events |
+| PUBLISH | `/app/chat/rooms/{roomId}/read` | Mark room read |
+| SUBSCRIBE | `/user/queue/notifications` | Personal notifications |
+| SUBSCRIBE | `/user/queue/presence` | Presence events (online/offline) |
 
 ---
 
@@ -412,39 +481,129 @@ Subscribe/publish topics:
 | `/login` | Login |
 | `/register` | Sign up |
 | `/forgot-password` | Password reset |
-| `/feed` | Home feed |
+| `/feed` | Home feed (following / nearby / trending tabs) + stories row |
 | `/posts/[postId]` | Post detail + comments |
+| `/profile/[userId]` | Profile — posts / followers / following tabs |
+| `/discover` | Discover people, activities, communities |
+| `/search` | Global search |
+| `/hashtag/[tag]` | Posts by hashtag |
+| `/neighbours` | Nearby neighbours map |
+| `/neighbourhood` | My neighbourhood info |
 | `/communities` | Browse communities |
-| `/communities/[id]` | Community detail |
+| `/communities/[id]` | Community detail + feed |
 | `/communities/create` | Create community |
 | `/activities` | Nearby activities |
-| `/activities/[id]` | Activity detail |
+| `/activities/[id]` | Activity detail + members |
 | `/activities/create` | Create activity |
 | `/marketplace` | Marketplace listings |
-| `/marketplace/[id]` | Listing detail |
+| `/marketplace/[id]` | Listing detail + seller reviews |
+| `/marketplace/[id]/edit` | Edit listing |
 | `/marketplace/create` | Create listing |
-| `/borrow` | Borrow requests feed |
-| `/borrow/create` | Post a borrow request |
-| `/safety` | Safety alerts map |
+| `/marketplace/sellers/[sellerId]/reviews` | All seller reviews |
+| `/borrow` | Borrow requests |
+| `/borrow/create` | Post borrow request |
+| `/safety` | Safety alerts |
 | `/safety/create` | Raise safety alert |
 | `/chat` | Chat inbox |
-| `/chat/[roomId]` | Chat room |
-| `/search` | Global search |
+| `/chat/[roomId]` | Chat room (text + image) |
+| `/chat/new-group` | Create group chat |
 | `/notifications` | Notifications |
-| `/neighbours` | Nearby neighbours |
-| `/neighbourhood` | My neighbourhood |
-| `/profile/[userId]` | User profile |
-| `/my/listings` | My marketplace listings |
+| `/my/saved` | Saved posts |
 | `/my/activities` | My activities |
+| `/my/listings` | My marketplace listings |
 | `/settings` | Settings hub |
 | `/settings/profile` | Edit profile |
 | `/settings/password` | Change password |
+| `/settings/privacy` | Privacy settings |
+| `/settings/notifications` | Notification preferences |
+| `/settings/blocked` | Blocked users |
+| `/settings/verification` | Address & identity verification |
+| `/settings/follow-requests` | Incoming follow requests |
+| `/admin` | Admin dashboard |
+| `/admin/users` | User management |
+| `/admin/moderation` | Content moderation |
+| `/admin/reports` | Reports queue |
+
+---
+
+## Project Structure
+
+```
+com.NextHouse/                      # Spring Boot backend
+├── docker/
+│   ├── docker-compose.yml          # Full local dev stack
+│   ├── pgbouncer/
+│   │   ├── pgbouncer.ini           # Connection pool config
+│   │   └── userlist.txt            # Dev auth (plain text — Docker only)
+│   └── Dockerfile
+├── k8s/base/                       # Kubernetes manifests
+│   ├── 01-namespace-configmap.yaml
+│   ├── 02-secrets-template.yaml
+│   ├── 03-api-deployment.yaml
+│   ├── 05-hpa-pdb.yaml             # HPA: 2–20 pods, PDB
+│   ├── 06-postgres-statefulset.yaml
+│   ├── 07-redis-statefulset.yaml
+│   ├── 09-kafka-statefulset.yaml
+│   ├── 10-rabbitmq-statefulset.yaml
+│   ├── 11-pgbouncer-deployment.yaml
+│   └── kustomization.yaml
+└── src/main/java/com/NextHouse/
+    ├── controller/                 # REST controllers
+    ├── service/ + serviceImpl/     # Business logic
+    ├── entity/                     # JPA entities
+    ├── dto/request/ + response/    # DTOs
+    ├── repository/                 # Spring Data JPA
+    ├── config/                     # Security, WebSocket, Redis, Kafka, L2 cache
+    ├── security/                   # JWT filter, cookie util
+    ├── scheduler/                  # Scheduled jobs (activity reminders, trending)
+    ├── event/                      # Kafka events
+    └── mapper/                     # MapStruct mappers
+
+nexthouse-frontend-v3/              # Next.js 14 frontend
+└── src/
+    ├── app/
+    │   ├── (auth)/                 # Login / Register / Forgot password
+    │   └── (app)/                  # Authenticated app (all pages above)
+    ├── api/index.ts                # Typed API wrappers (one per backend module)
+    ├── components/
+    │   ├── post/PostCard.tsx       # Feed card (reactions, repost, share)
+    │   ├── stories/StoriesRow.tsx  # Story viewer (auto-advance, reply)
+    │   ├── chat/                   # ChatInput (image), MessageBubble
+    │   └── common/                 # WSProvider, AuthProvider, Providers
+    ├── lib/
+    │   ├── apiClient.ts            # Axios (withCredentials, token refresh)
+    │   └── ws.ts                   # STOMP WebSocket singleton
+    └── types/index.ts              # TypeScript interfaces ↔ backend DTOs
+```
+
+---
+
+## Authentication Flow
+
+Tokens are stored in **httpOnly cookies** (not localStorage) — immune to XSS attacks.
+
+```
+Login → POST /auth/login
+      → Server sets nh_access cookie  (httpOnly, Strict, 15 min)
+      → Server sets nh_refresh cookie (httpOnly, Strict, 30 days, path=/auth/refresh-token)
+      → Browser sends cookies automatically on every request
+
+401 response
+      → Axios interceptor fires
+      → POST /auth/refresh-token  ← nh_refresh cookie sent automatically
+      → New nh_access cookie set by server
+      → Original request retried
+
+WebSocket connection
+      → STOMP CONNECT frame with Authorization: Bearer <ws-token>
+      → ws-token fetched from /auth/refresh-token response on connect
+```
 
 ---
 
 ## Pagination
 
-All list endpoints support standard pagination query params:
+All list endpoints support:
 
 | Param | Default | Description |
 |---|---|---|
@@ -452,10 +611,9 @@ All list endpoints support standard pagination query params:
 | `size` | `20` | Items per page |
 
 Response envelope:
-
 ```json
 {
-  "content": [...],
+  "content": [],
   "page": 0,
   "size": 20,
   "totalElements": 150,
@@ -469,390 +627,46 @@ Response envelope:
 
 ---
 
-## Project Structure
+## Capacity
 
-```
-com.NextHouse/                   # Spring Boot backend
-├── src/main/java/com/NextHouse/
-│   ├── controller/              # REST controllers
-│   ├── service/                 # Service interfaces
-│   ├── serviceImpl/             # Business logic
-│   ├── entity/                  # JPA entities
-│   ├── dto/                     # Request / Response DTOs
-│   ├── repository/              # Spring Data repositories
-│   ├── config/                  # Security, WebSocket, Redis, Kafka config
-│   ├── security/                # JWT filter, UserDetails
-│   ├── event/                   # Kafka event objects
-│   └── constant/                # Enums and constants
-└── src/main/resources/
-    ├── application.yml
-    └── db/migration/            # Flyway SQL migrations
-
-nexthouse-frontend-v3/           # Next.js frontend
-├── src/
-│   ├── app/                     # App Router pages
-│   │   ├── (auth)/              # Login / Register / Forgot password
-│   │   └── (app)/               # Main authenticated app
-│   ├── api/                     # Axios API wrappers (one per backend module)
-│   ├── components/              # Shared UI components
-│   ├── lib/                     # apiClient, WebSocket (ws.ts), utilities
-│   └── types/                   # TypeScript interfaces mirroring backend DTOs
-```
-
----
-
-## Frontend — In Depth
-
-### App Router Layout
-
-The Next.js App Router has two route groups:
-
-```
-src/app/
-├── layout.tsx            → Root layout: loads Inter font, sets SEO metadata, wraps in <Providers>
-├── page.tsx              → Root redirect: sends / → /feed
-├── (auth)/               → Public routes — no auth required
-│   ├── layout.tsx        → Centred card layout for auth pages
-│   ├── login/page.tsx
-│   ├── register/page.tsx
-│   └── forgot-password/page.tsx
-└── (app)/                → Protected routes — redirects to /login if not authenticated
-    ├── layout.tsx        → App shell: sticky header, bottom nav, slide-in side menu
-    └── [all app pages]
-```
-
-The `(app)/layout.tsx` shell handles:
-- Auth guard — reads Redux auth state, redirects if `!user`
-- Sticky header: logo, search button, safety alert shortcut, notification bell (with unread badge), hamburger menu
-- Bottom navigation: Feed · Neighbours · Communities · Marketplace · Chat
-- Slide-in side menu: profile summary + deep links to all sections
-
----
-
-### Authentication Flow
-
-```
-User submits login form
-    → POST /api/v1/auth/login
-    → tokens.set(accessToken, refreshToken)   ← stored in localStorage
-    → Redux auth slice updated
-    → redirect to /feed
-
-On every API request
-    → Axios request interceptor injects   Authorization: Bearer <accessToken>
-    → X-Device-Id header (persisted in localStorage, generated once)
-    → X-Device-Type: WEB
-
-On 401 response (non-auth endpoint)
-    → Axios response interceptor fires
-    → POST /api/v1/auth/refresh-token
-    → tokens.set(newAccess, newRefresh)
-    → Retry original request with new token
-    → All concurrent 401s are queued and drained together
-
-If refresh fails
-    → tokens.clear()
-    → window.dispatchEvent(new Event('nh:logout'))
-    → AuthProvider listens and redirects to /login
-```
-
-Token storage keys in `localStorage`:
-
-| Key | Value |
-|---|---|
-| `nh_access` | JWT access token (expires 15 min by default) |
-| `nh_refresh` | Refresh token (expires 30 days) |
-| `nh_device` | Persistent device ID (`web-<timestamp>-<random>`) |
-
----
-
-### API Client (`src/lib/apiClient.ts`)
-
-Axios instance with base URL `NEXT_PUBLIC_API_URL/api/v1`.
-
-Typed helper functions — all unwrap the `{ data: T }` response envelope automatically:
-
-```ts
-apiGet<T>(url, params?)    // GET with query params
-apiPost<T>(url, body?)     // POST with JSON body
-apiPut<T>(url, body?)      // PUT with JSON body
-apiPatch<T>(url, body?)    // PATCH with JSON body
-apiDelete<T>(url)          // DELETE
-apiUpload<T>(url, form)    // POST multipart/form-data (file uploads)
-```
-
-Usage example:
-
-```ts
-import { apiGet } from '@/lib/apiClient';
-
-const user = await apiGet<UserResponse>('/users/me');
-```
-
----
-
-### API Layer (`src/api/index.ts`)
-
-Each backend module has a named export object. All methods return typed Promises.
-
-| Export | Module | Example |
+| Scenario | Concurrent Users | RPS |
 |---|---|---|
-| `authApi` | Authentication | `authApi.login({ identifier, password })` |
-| `usersApi` | Users / profiles | `usersApi.getMe()` |
-| `postsApi` | Posts + comments | `postsApi.followingFeed(page, size)` |
-| `activitiesApi` | Local activities | `activitiesApi.nearby(lat, lon, radius)` |
-| `communitiesApi` | Communities | `communitiesApi.join(id)` |
-| `chatApi` | Chat rooms + messages | `chatApi.inbox()` |
-| `notificationsApi` | Notifications | `notificationsApi.markAllRead()` |
-| `marketplaceApi` | Marketplace | `marketplaceApi.nearby(lat, lon)` |
-| `safetyApi` | Safety alerts | `safetyApi.create(dto)` |
-| `borrowApi` | Borrow requests | `borrowApi.create(dto)` |
-| `neighborhoodsApi` | Neighbourhoods | `neighborhoodsApi.detect(lat, lon)` |
-| `searchApi` | Global search | `searchApi.global(query)` |
-| `mediaApi` | File upload | `mediaApi.upload(file, 'POST')` |
-| `recommendationsApi` | Recommendations | `recommendationsApi.posts()` |
+| Docker Compose (1 pod) | ~200–500 | ~100–500 |
+| K8s 2 pods (minimum) | ~2,000–5,000 | ~500–1,000 |
+| K8s 20 pods (HPA max) | ~50,000–100,000 | ~10,000–20,000 |
+
+Key optimisations in place:
+- **PgBouncer** — 400 app connections → 25 PostgreSQL connections
+- **1-query profile** — follower count, online status, follow state fetched in one SQL
+- **Hibernate L2 cache** — User / Community / Neighborhood entities cached in-process (Caffeine)
+- **Redis L1 cache** — profiles, trending feed, community pages cached with TTL
+- **Indexed hashtags** — `post_hashtags` table with index (no full-table LIKE scans)
+- **HPA** — scales 2→20 pods on CPU >70% or memory >80%
 
 ---
 
-### WebSocket / Real-time (`src/lib/ws.ts`)
-
-STOMP protocol over SockJS. The client is a singleton — import `wsClient` anywhere.
-
-**Connection:**
-```ts
-import { wsClient } from '@/lib/ws';
-
-// Connect with JWT
-wsClient.connect(accessToken);
-
-// Disconnect
-wsClient.disconnect();
-
-// Check status
-wsClient.isConnected();
-```
-
-**Subscriptions:**
-```ts
-// Chat messages in a room
-const unsub = wsClient.onRoomMessage(roomId, (msg: ChatMessageResponse) => {
-  // handle message
-});
-
-// Typing indicator
-const unsub = wsClient.onTyping(roomId, ({ userId, typing }) => {});
-
-// Personal notifications
-const unsub = wsClient.onNotification((notification) => {});
-
-// User presence
-const unsub = wsClient.onPresence(userId, ({ online, lastSeen }) => {});
-
-// Always call unsub() on component unmount
-```
-
-**Publishing:**
-```ts
-wsClient.sendMessage(roomId, { message: 'Hello!', messageType: 'TEXT' });
-wsClient.sendTyping(roomId, true);
-wsClient.markRead(roomId);
-```
-
-Connection config: heartbeat 60 s, auto-reconnect delay 5 s, token injected in CONNECT frame headers.
-
----
-
-### WebSocket Provider (`src/components/common/WSProvider.tsx`)
-
-Mounted at the root of `(app)/layout.tsx`. Handles:
-- Connects WebSocket when user is authenticated
-- Subscribes to `onNotification` → dispatches to Redux + shows toast
-- Toast types by notification event: `SAFETY_ALERT` → red error toast, `FOLLOW` / `COMMENT` / `LIKE` → success toast, join requests → info toast
-- Loads initial unread counts (notifications + chat) on first connect
-- Disconnects and cleans up all subscriptions on logout
-
----
-
-### State Management (Redux Toolkit)
-
-Store is set up in `src/components/common/Providers.tsx`.
-
-Recommended slice structure (add as slices are created):
-
-| Slice | State |
-|---|---|
-| `auth` | `user`, `accessToken`, `status` |
-| `notifications` | `unreadCount`, `items[]` |
-| `chat` | `totalUnread`, `rooms[]` |
-
----
-
-### Forms — React Hook Form + Zod
-
-All forms follow this pattern:
-
-```ts
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-
-const schema = z.object({
-  email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Min 8 characters'),
-});
-type Form = z.infer<typeof schema>;
-
-const { register, handleSubmit, formState: { errors } } = useForm<Form>({
-  resolver: zodResolver(schema),
-});
-```
-
-For number inputs that can be blank, use `z.preprocess` to avoid `NaN`:
-```ts
-amount: z.preprocess(
-  (v) => (typeof v === 'number' && isNaN(v as number) ? undefined : v),
-  z.number().min(0).optional(),
-),
-```
-
-For button-group selectors (not a native input), register a hidden field:
-```tsx
-<input type="hidden" {...register('category')} />
-{OPTIONS.map(o => (
-  <button type="button" onClick={() => setValue('category', o, { shouldValidate: true })}>
-    {o}
-  </button>
-))}
-```
-
----
-
-### Styling System (Tailwind CSS)
-
-Custom design tokens in `tailwind.config.js`:
-
-| Token | Value | Notes |
-|---|---|---|
-| `primary-500` | `#10b981` | Same as Tailwind `emerald-500` — both work |
-| `primary-50 → 900` | emerald scale | Full palette available |
-| `font-sans` | Inter | Loaded via Google Fonts in root layout |
-| `shadow-sm/md/lg` | Custom | Softer than Tailwind defaults |
-| `rounded-2xl` | `1rem` | `rounded-3xl` = `1.5rem` |
-
-Global component classes defined in `src/app/globals.css`:
-
-| Class | Description |
-|---|---|
-| `.btn` | Base button (flex, semibold, transition, disabled states) |
-| `.btn-primary` | Emerald filled button |
-| `.btn-outline` | Border button |
-| `.btn-ghost` | Text-only button |
-| `.btn-danger` | Red filled button |
-| `.btn-sm` | Small size modifier |
-| `.card` | White rounded card with border |
-| `.card-hover` | Card + hover shadow/border transition |
-| `.input` | Form input (border, focus ring, emerald accent) |
-| `.input-error` | Red error state for `.input` |
-| `.label` | Form field label |
-| `.badge` | Pill badge (inline-flex) |
-| `.avatar` | Circular avatar base |
-| `.avatar-sm/md/lg/xl` | Avatar sizes (8/10/14/20 = 32/40/56/80 px) |
-| `.section-title` | Uppercase section header |
-| `.safe-pb` | iOS safe-area bottom padding |
-| `.scrollbar-hide` | Hide scrollbar (cross-browser) |
-| `.line-clamp-2/3` | Text truncation at 2 or 3 lines |
-
----
-
-### Environment Variables
-
-**Frontend** (`nexthouse-frontend-v3/.env.local`):
-
-| Variable | Default | Description |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Backend REST base URL |
-| `NEXT_PUBLIC_WS_URL` | `http://localhost:8080` | WebSocket base URL (SockJS endpoint) |
-
-**Backend** (override via env or `application.yml`):
-
-| Variable | Default | Description |
-|---|---|---|
-| `DB_HOST` | `localhost` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_NAME` | `nexthouse_db` | Database name |
-| `DB_USERNAME` | `nexthouse` | DB username |
-| `DB_PASSWORD` | `changeme` | DB password |
-| `REDIS_HOST` | `localhost` | Redis host |
-| `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_PASSWORD` | *(empty)* | Redis password |
-| `KAFKA_BROKERS` | `localhost:9092` | Kafka bootstrap servers |
-| `JWT_SECRET` | dev key | **Change in production** |
-| `SERVER_PORT` | `8080` | Backend HTTP port |
-| `AWS_ACCESS_KEY_ID` | — | AWS credentials for S3 |
-| `AWS_SECRET_ACCESS_KEY` | — | AWS credentials for S3 |
-| `S3_BUCKET` | `nexthouse-media` | S3 bucket for media uploads |
-| `CDN_BASE_URL` | `https://cdn.nexthouse.app` | CDN prefix for media URLs |
-| `FIREBASE_CREDENTIALS_FILE` | `classpath:firebase-service-account.json` | Set to `disabled` to skip push notifications locally |
-| `FIREBASE_PROJECT_ID` | — | Firebase project ID |
-| `SES_USERNAME` | — | AWS SES SMTP username |
-| `SES_PASSWORD` | — | AWS SES SMTP password |
-
----
-
-### Frontend Scripts
+## Production Deployment (Kubernetes)
 
 ```bash
-# Development server (hot reload)
-npm run dev
+# 1. Fill secrets (never committed)
+cp k8s/base/02-secrets-template.yaml k8s/base/02-secrets.yaml
+# Edit 02-secrets.yaml with base64-encoded values
 
-# Production build
-npm run build
+# 2. Create PgBouncer userlist secret
+kubectl create secret generic pgbouncer-userlist \
+  --from-literal=userlist.txt='"nexthouse" "<SCRAM-SHA-256-hash>"' \
+  -n nexthouse
 
-# Start production server (after build)
-npm start
+# 3. Apply manifests
+kubectl apply -k k8s/base/
 
-# Lint
-npm run lint
+# 4. Verify
+kubectl get pods -n nexthouse
+kubectl logs -n nexthouse deployment/nexthouse-api
 ```
 
----
-
-### Image Handling
-
-`next.config.js` allows `<Image>` optimization from:
-
-| Domain | Protocol |
-|---|---|
-| `cdn.nexthouse.app` | https |
-| `localhost` | http |
-| `*` (any) | https |
-
-Always use Next.js `<Image>` component for optimised loading, not `<img>`.
-
----
-
-### TypeScript Types (`src/types/index.ts`)
-
-All interfaces mirror the backend DTOs exactly. Naming convention:
-
-| Pattern | Example |
-|---|---|
-| Response DTOs | `UserResponse`, `PostResponse`, `ChatRoomResponse` |
-| Request DTOs | `LoginRequest`, `CreatePostRequest`, `SendMessageRequest` |
-| Summary DTOs | `UserSummaryDTO`, `CommunitySummaryDTO` |
-| Page wrapper | `PageResponse<T>` |
-| API envelope | `ApiResponse<T>` |
-
-When the backend adds a new field, update both the Java DTO and the corresponding TypeScript interface here.
-
----
-
-### Common Pitfalls
-
-| Issue | Fix |
-|---|---|
-| `NaN` in number inputs | Use `z.preprocess` in Zod schema to convert `NaN → undefined` |
-| Button-group field not validating | Add `<input type="hidden" {...register('fieldName')} />` + `setValue(..., { shouldValidate: true })` |
-| Image not loading | Add domain to `remotePatterns` in `next.config.js` |
-| WebSocket connects before token ready | Use `wsClient.onceConnected(cb)` to defer subscription until connected |
-| 401 loop on refresh endpoint | The Axios interceptor skips retry for URLs containing `/auth/` |
+Generate SCRAM hash:
+```sql
+-- Run as superuser in PostgreSQL
+SELECT passwd FROM pg_shadow WHERE usename = 'nexthouse';
+```

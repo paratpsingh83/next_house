@@ -61,7 +61,7 @@ public class MediaFile extends BaseEntity {
     @Column(name = "entity_type", nullable = false, length = 50)
     private String entityType;
 
-    @Column(name = "entity_id", nullable = false)
+    @Column(name = "entity_id")
     private Long entityId;
 
     @ManyToOne(fetch = FetchType.LAZY)

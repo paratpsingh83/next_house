@@ -31,4 +31,10 @@ public interface CommunityService {
     void updateMemberRole(Long communityId, Long memberId, String role, Long currentUserId);
 
     PageResponseDTO<UserSummaryDTO> getMembers(Long communityId, String role, int page, int size);
+
+    /**
+     * Transfers OWNER role to an existing approved member.
+     * Current owner is demoted to MEMBER. Only the current OWNER can call this.
+     */
+    void transferOwnership(Long communityId, Long newOwnerUserId, Long currentUserId);
 }

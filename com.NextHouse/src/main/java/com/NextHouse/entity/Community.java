@@ -1,9 +1,12 @@
 package com.NextHouse.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
-
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 @Entity
 @Table(
         name = "communities",
@@ -39,9 +42,11 @@ public class Community extends GeoBaseEntity {
     @Column(name = "icon_image", length = 500)
     private String iconImage;
 
+    @Builder.Default
     @Column(name = "private_community", nullable = false)
     private Boolean privateCommunity = false;
 
+    @Builder.Default
     @Column(name = "verified", nullable = false)
     private Boolean verified = false;
 

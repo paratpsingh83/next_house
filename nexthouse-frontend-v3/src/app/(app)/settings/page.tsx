@@ -1,10 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Lock, Bell, Shield, ChevronRight, Edit3, Star, Bookmark, BadgeCheck } from 'lucide-react';
+import { LogOut, Lock, Bell, Shield, ChevronRight, Edit3, Star, Bookmark, BadgeCheck, UserX } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { clearAuth } from '@/store/slices/authSlice';
 import { authApi } from '@/api';
+import { tokens } from '@/lib/apiClient';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
@@ -17,6 +18,7 @@ export default function SettingsPage() {
   const logout = async () => {
     setLoading(true);
     try { await authApi.logout(); } catch {}
+    tokens.clear();
     dispatch(clearAuth());
     router.push('/login');
     toast.success('Logged out');
@@ -31,6 +33,7 @@ export default function SettingsPage() {
     { title: 'Preferences', items: [
       { icon: Bell,      label: 'Notifications',   sub: 'Push & email settings',       href: '/settings/notifications' },
       { icon: Shield,    label: 'Privacy',          sub: 'Who can see your profile',    href: '/settings/privacy' },
+      { icon: UserX,     label: 'Blocked Users',    sub: 'Manage people you blocked',   href: '/settings/blocked' },
       { icon: BadgeCheck, label: 'Verification',   sub: 'Verify address & identity',   href: '/settings/verification' },
     ]},
     { title: 'Content', items: [
@@ -106,7 +109,7 @@ export default function SettingsPage() {
         </div>
 
         {/* App version */}
-        <p className="text-center text-xs text-gray-300 pb-4">NexHouse v1.0.0</p>
+        <p className="text-center text-xs text-gray-300 pb-4">NextHouse v1.0.0</p>
       </div>
     </div>
   );

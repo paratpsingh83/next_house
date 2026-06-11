@@ -37,6 +37,7 @@ volumes:
   kafka_data:
   zookeeper_data:
   zookeeper_log:
+  rabbitmq_data:
 
 # ── Shared network ────────────────────────────────────────────────────────────
 networks:
@@ -181,6 +182,62 @@ services:
     profiles:
       - tools
 
+  # ── RabbitMQ (STOMP broker relay for WebSocket) ───────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: nexthouse-rabbitmq
+    restart: unless-stopped
+    hostname: nexthouse-rabbitmq
+    # Enable STOMP and management plugins before starting the server
+    command: >-
+      sh -c "rabbitmq-plugins enable rabbitmq_stomp rabbitmq_management --offline &&
+             docker-entrypoint.sh rabbitmq-server"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nexthouse}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-nexthouse_dev_pass}
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI  →  http://localhost:15672
+      - "61613:61613"  # STOMP
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nexthouse-network
+
+  # ── PgBouncer — PostgreSQL Connection Pooler ──────────────────────────────
+  pgbouncer:
+    image: pgbouncer/pgbouncer:1.22.1
+    container_name: nexthouse-pgbouncer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # These override values inside pgbouncer.ini if needed
+      PGBOUNCER_POOL_MODE:         transaction
+      PGBOUNCER_DEFAULT_POOL_SIZE: "25"
+      PGBOUNCER_MAX_CLIENT_CONN:   "1000"
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports:
+      - "5433:5432"     # Expose 5433 on host so you can connect directly for debugging
+                        # Internal Docker: postgres://nexthouse:pass@pgbouncer:5432/nexthouse_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U nexthouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - nexthouse-network
+
   # ── NexHouse Spring Boot API ───────────────────────────────────────────────
   nexthouse-api:
     build:
@@ -189,18 +246,20 @@ services:
     container_name: nexthouse-api
     restart: unless-stopped
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       # Spring profile
       SPRING_PROFILES_ACTIVE: dev
 
-      # Database
-      DB_HOST:     postgres
+      # Database — connect via PgBouncer (not directly to postgres)
+      DB_HOST:     pgbouncer
       DB_PORT:     5432
       DB_NAME:     ${DB_NAME:-nexthouse_db}
       DB_USERNAME: ${DB_USERNAME:-nexthouse}
@@ -223,6 +282,12 @@ services:
       AWS_REGION:            ${AWS_REGION:-ap-southeast-1}
       S3_BUCKET:             ${S3_BUCKET:-nexthouse-media-dev}
       CDN_BASE_URL:          ${CDN_BASE_URL:-http://localhost:4566/nexthouse-media-dev}
+
+      # RabbitMQ STOMP relay
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_STOMP_PORT: 61613
+      RABBITMQ_USER: ${RABBITMQ_USER:-nexthouse}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-nexthouse_dev_pass}
 
       # Firebase (optional for dev — push notifications won't work without it)
       FIREBASE_CREDENTIALS_FILE: ${FIREBASE_CREDENTIALS_FILE:-classpath:firebase-service-account.json}

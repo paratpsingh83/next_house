@@ -200,7 +200,7 @@ public class ActivityServiceImpl implements ActivityService {
             activityRepository.save(activity);
             throw new ConflictException("Activity is full");
         }
-        memberRepository.updateJoinStatus(memberId, JoinStatus.APPROVED);
+        member.setJoinStatus(JoinStatus.APPROVED);
         member.setJoinedAt(LocalDateTime.now());
         memberRepository.save(member);
         notificationService.notifyActivityApproval(member.getUser().getId(), activityId, true);

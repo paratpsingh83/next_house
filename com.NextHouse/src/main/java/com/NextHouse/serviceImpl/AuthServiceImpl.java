@@ -206,7 +206,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public void verifyOtp(OtpVerifyRequestDTO dto) {
+    public String verifyOtp(OtpVerifyRequestDTO dto) {
         OtpPurpose purpose = OtpPurpose.valueOf(dto.getPurpose());
         LocalDateTime now  = LocalDateTime.now();
 
@@ -219,14 +219,27 @@ public class AuthServiceImpl implements AuthService {
         if (record.getAttempts() >= OTP_MAX_ATTEMPTS)
             throw new RateLimitException("Too many OTP attempts. Please request a new OTP.");
 
-        otpRepository.incrementAttempts(record.getId());
-
-        if (!passwordEncoder.matches(dto.getOtp(), record.getOtp()))
+        if (!passwordEncoder.matches(dto.getOtp(), record.getOtp())) {
+            otpRepository.incrementAttempts(record.getId());
             throw new BadRequestException("Invalid OTP");
+        }
 
         record.setVerified(true);
         record.setUsedAt(now);
         otpRepository.save(record);
+
+        if (purpose == OtpPurpose.PASSWORD_RESET) {
+            User user = dto.getPhone() != null
+                    ? userRepository.findByPhoneNumber(dto.getPhone())
+                            .orElseThrow(() -> new NotFoundException("User not found"))
+                    : userRepository.findByEmail(dto.getEmail())
+                            .orElseThrow(() -> new NotFoundException("User not found"));
+            String resetToken = UUID.randomUUID().toString();
+            redisTokenStore.store("reset:" + resetToken, user.getId().toString(), 900);
+            return resetToken;
+        }
+
+        return null;
     }
 
     // ─── Password ─────────────────────────────────────────────────────────────
@@ -332,11 +345,25 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponseDTO verifyTwoFactor(Long currentUserId, String otp) {
-        User user = findUserOrThrow(currentUserId);
-        verifyOtp(OtpVerifyRequestDTO.builder()
-                .phone(user.getPhoneNumber()).otp(otp)
-                .purpose(OtpPurpose.TWO_FACTOR_AUTH.name()).build());
+    public AuthResponseDTO verifyTwoFactor(String twoFactorToken, String otp) {
+        String userIdStr = redisTokenStore.get("2fa:" + twoFactorToken);
+        if (userIdStr == null)
+            throw new UnauthorizedException("Invalid or expired 2FA token. Please login again.");
+        User user = findUserOrThrow(Long.parseLong(userIdStr));
+        OtpVerifyRequestDTO otpDto;
+        if (user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
+            otpDto = OtpVerifyRequestDTO.builder()
+                    .phone(user.getPhoneNumber()).otp(otp)
+                    .purpose(OtpPurpose.TWO_FACTOR_AUTH.name()).build();
+        } else if (user.getEmail() != null) {
+            otpDto = OtpVerifyRequestDTO.builder()
+                    .email(user.getEmail()).otp(otp)
+                    .purpose(OtpPurpose.TWO_FACTOR_AUTH.name()).build();
+        } else {
+            throw new BadRequestException("2FA requires a phone number or email. Please contact support.");
+        }
+        verifyOtp(otpDto);
+        redisTokenStore.delete("2fa:" + twoFactorToken);
         return buildAuthResponse(user, null, null);
     }
 
@@ -379,10 +406,7 @@ public class AuthServiceImpl implements AuthService {
     private String generateUniqueUsername(String name) {
         String base = name.toLowerCase().replaceAll("[^a-z0-9]", "");
         if (base.length() < 3) base = "user" + base;
-        String candidate = base;
-        int suffix = 1;
-        while (userRepository.existsByUsername(candidate)) candidate = base + suffix++;
-        return candidate;
+        return base + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     private void assignNeighborhood(User user, double lat, double lon) {

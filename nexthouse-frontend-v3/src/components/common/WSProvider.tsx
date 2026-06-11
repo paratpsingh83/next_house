@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { wsClient } from '@/lib/ws';
 import { appendMessage, setTotalUnread } from '@/store/slices/chatSlice';
-import { prepend, setUnread } from '@/store/slices/notifSlice';
+import { prepend, setUnread, incrementFollowReqCount } from '@/store/slices/notifSlice';
 import { setOnline, setOffline } from '@/store/slices/presenceSlice';
 import { notificationsApi, chatApi } from '@/api';
 import toast from 'react-hot-toast';
@@ -35,10 +35,15 @@ export default function WSProvider({ children }: { children: React.ReactNode }) 
         // Subscribe to personal notifications
         const unsubNotif = wsClient.onNotification(notif => {
           dispatch(prepend(notif));
-          if (notif.notificationType === 'SAFETY_ALERT') {
+          if (notif.notificationType === 'FOLLOW_REQUEST') {
+            dispatch(incrementFollowReqCount());
+            toast(`${notif.sender?.name ?? 'Someone'} wants to follow you`, { duration: 5000 });
+          } else if (notif.notificationType === 'SAFETY_ALERT') {
             toast(`🚨 ${notif.title}`, { duration: 8000, style: { background: '#dc2626', color: '#fff', borderRadius: '12px' } });
           } else if (notif.notificationType === 'FOLLOW') {
             toast(`${notif.sender?.name ?? 'Someone'} started following you`, { duration: 4000 });
+          } else if (notif.notificationType === 'FOLLOW_REQUEST_ACCEPTED') {
+            toast(`${notif.sender?.name ?? 'Someone'} accepted your follow request`, { duration: 4000 });
           } else if (notif.notificationType === 'COMMENT') {
             toast(`New comment on your post`, { duration: 4000 });
           } else if (notif.notificationType === 'LIKE') {

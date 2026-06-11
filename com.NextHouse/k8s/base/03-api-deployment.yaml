@@ -147,6 +147,26 @@ spec:
                 secretKeyRef:
                   name: nexthouse-secrets
                   key: AWS_SECRET_ACCESS_KEY
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: nexthouse-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: nexthouse-secrets
+                  key: RABBITMQ_PASS
+            - name: DIGILOCKER_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: nexthouse-secrets
+                  key: DIGILOCKER_CLIENT_ID
+            - name: DIGILOCKER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nexthouse-secrets
+                  key: DIGILOCKER_CLIENT_SECRET
 
           # ── Resource limits ──────────────────────────────────────────────────
           # requests: guaranteed allocation (used for scheduling decisions)

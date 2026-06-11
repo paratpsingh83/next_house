@@ -32,7 +32,9 @@ public class CreateActivityRequestDTO {
     @Max(10000)
     private Integer maxMembers;
 
+    @Builder.Default
     private Boolean privateActivity  = false;
+    @Builder.Default
     private Boolean approvalRequired = false;
 
     private Long communityId;

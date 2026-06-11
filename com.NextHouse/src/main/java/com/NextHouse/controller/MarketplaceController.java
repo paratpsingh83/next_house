@@ -88,6 +88,7 @@ public class MarketplaceController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String q,
             @CurrentUser Long currentUserId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -96,7 +97,7 @@ public class MarketplaceController {
                 .latitude(latitude).longitude(longitude).radiusMeters(radiusMeters).build();
         return ResponseEntity.ok(
             ApiResponseDTO.success(
-                marketplaceService.getNearbyListings(currentUserId, geo, category, minPrice, maxPrice, page, size)));
+                marketplaceService.getNearbyListings(currentUserId, geo, category, minPrice, maxPrice, q, page, size)));
     }
 
     @GetMapping("/my")

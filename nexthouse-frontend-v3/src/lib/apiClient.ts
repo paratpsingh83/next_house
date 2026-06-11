@@ -1,30 +1,30 @@
 // src/lib/apiClient.ts
-import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
-const ACCESS_KEY  = 'nh_access';
-const REFRESH_KEY = 'nh_refresh';
 
-// ── Token store (localStorage) ────────────────────────────────────────────────
+// ── Token store ───────────────────────────────────────────────────────────────
+// Access token is kept in sessionStorage (cleared on tab close, survives page refresh).
+// It is NOT used for HTTP requests — those rely on the httpOnly nh_access cookie.
+// The in-memory token is only needed for WebSocket STOMP auth headers.
+// The refresh token is managed solely as an httpOnly cookie by the server.
+const WS_TOKEN_KEY = 'nh_ws_token';
+
 export const tokens = {
-  getAccess:  (): string | null => {
+  // WebSocket access token (sessionStorage — survives refresh, cleared on tab close)
+  getAccess: (): string | null => {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem(ACCESS_KEY);
+    return sessionStorage.getItem(WS_TOKEN_KEY);
   },
-  getRefresh: (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(REFRESH_KEY);
-  },
-  set: (access: string, refresh: string) => {
+  setWsToken: (token: string) => {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(ACCESS_KEY,  access);
-    localStorage.setItem(REFRESH_KEY, refresh);
+    sessionStorage.setItem(WS_TOKEN_KEY, token);
   },
   clear: () => {
     if (typeof window === 'undefined') return;
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    sessionStorage.removeItem(WS_TOKEN_KEY);
   },
+  // Persistent device fingerprint (localStorage — not a security token)
   deviceId: (): string => {
     if (typeof window === 'undefined') return 'ssr';
     let id = localStorage.getItem('nh_device');
@@ -38,15 +38,16 @@ export const tokens = {
 
 // ── Axios instance ────────────────────────────────────────────────────────────
 export const api: AxiosInstance = axios.create({
-  baseURL: `${BASE}/api/v1`,
-  timeout: 30_000,
-  headers: { 'Content-Type': 'application/json' },
+  baseURL:         `${BASE}/api/v1`,
+  timeout:         30_000,
+  withCredentials: true,    // send nh_access httpOnly cookie automatically
+  headers:         { 'Content-Type': 'application/json' },
 });
 
 // ── Request interceptor ───────────────────────────────────────────────────────
+// No Authorization header — the browser sends the nh_access cookie automatically.
+// Device headers are still sent for analytics / push notification targeting.
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = tokens.getAccess();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
   config.headers['X-Device-Id']   = tokens.deviceId();
   config.headers['X-Device-Type'] = 'WEB';
   return config;
@@ -54,15 +55,15 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 // ── Response interceptor — auto token refresh ─────────────────────────────────
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (t: string) => void; reject: (e: unknown) => void }> = [];
+let failedQueue: Array<{ resolve: () => void; reject: (e: unknown) => void }> = [];
 
-const drainQueue = (err: unknown, token: string | null = null) => {
-  failedQueue.forEach(p => (err ? p.reject(err) : p.resolve(token!)));
+const drainQueue = (err: unknown) => {
+  failedQueue.forEach(p => (err ? p.reject(err) : p.resolve()));
   failedQueue = [];
 };
 
 api.interceptors.response.use(
-  r => r,
+  (r: AxiosResponse) => r,
   async (error: AxiosError) => {
     const orig = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
@@ -73,37 +74,29 @@ api.interceptors.response.use(
       !orig.url?.includes('/auth/')
     ) {
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then(token => {
-          orig.headers.Authorization = `Bearer ${token}`;
-          return api(orig);
+        return new Promise<AxiosResponse>((resolve, reject) => {
+          failedQueue.push({
+            resolve: () => resolve(api(orig)),
+            reject,
+          });
         });
       }
 
-      orig._retry = true;
-      isRefreshing = true;
-
-      const refreshToken = tokens.getRefresh();
-      if (!refreshToken) {
-        drainQueue(error);
-        isRefreshing = false;
-        tokens.clear();
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('nh:logout'));
-        }
-        return Promise.reject(error);
-      }
+      orig._retry   = true;
+      isRefreshing  = true;
 
       try {
-        const { data } = await axios.post(`${BASE}/api/v1/auth/refresh-token`, {
-          refreshToken,
-          deviceId: tokens.deviceId(),
-        });
-        const { accessToken, refreshToken: newRefresh } = data.data;
-        tokens.set(accessToken, newRefresh);
-        drainQueue(null, accessToken);
-        orig.headers.Authorization = `Bearer ${accessToken}`;
+        // nh_refresh httpOnly cookie is sent automatically (withCredentials)
+        const { data } = await axios.post(
+          `${BASE}/api/v1/auth/refresh-token`,
+          { deviceId: tokens.deviceId() },
+          { withCredentials: true }
+        );
+        // Update sessionStorage ws token from the response body
+        const newAccessToken: string | undefined = data?.data?.accessToken;
+        if (newAccessToken) tokens.setWsToken(newAccessToken);
+
+        drainQueue(null);
         return api(orig);
       } catch (e) {
         drainQueue(e);

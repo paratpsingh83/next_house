@@ -1,7 +1,9 @@
 package com.NextHouse.scheduler;
 
 import com.NextHouse.constant.ActivityStatus;
+import com.NextHouse.entity.Activity;
 import com.NextHouse.repository.*;
+import com.NextHouse.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -10,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * ScheduledJobs
@@ -25,6 +28,7 @@ import java.time.LocalDateTime;
  * │ deleteExpiredOtps               │ Every 30 min     │ Purge used/expired OTP rows            │
  * │ deleteExpiredRefreshTokens      │ Daily 02:00 UTC  │ Purge revoked/expired refresh tokens   │
  * │ deleteStaleDeviceTokens         │ Daily 03:00 UTC  │ Remove FCM tokens unused for 30+ days  │
+ * │ expireOldStories                │ Every hour       │ Soft-delete stories past their 24hr TTL│
  * │ markStaleUsersOffline           │ Every 2 min      │ Mark users offline if WebSocket gone   │
  * └─────────────────────────────────┴──────────────────┴────────────────────────────────────────┘
  */
@@ -34,11 +38,44 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class ScheduledJobs {
 
-    private final ActivityRepository    activityRepository;
+    private final ActivityRepository        activityRepository;
+    private final ActivityMemberRepository  activityMemberRepository;
+    private final NotificationService       notificationService;
     private final OtpVerificationRepository otpRepository;
     private final RefreshTokenRepository    refreshTokenRepository;
     private final DeviceTokenRepository     deviceTokenRepository;
     private final UserPresenceRepository    presenceRepository;
+    private final StoryRepository           storyRepository;
+
+    // ─── Activity reminders ───────────────────────────────────────────────────
+
+    /**
+     * Send "starting in ~1 hour" reminders to approved members of upcoming activities.
+     * Runs every 5 minutes. Checks activities starting in [55, 60] minutes.
+     * reminder_sent flag prevents double-dispatch.
+     */
+    @Scheduled(cron = "0 */5 * * * *")
+    @Transactional
+    public void sendActivityReminders() {
+        LocalDateTime from = LocalDateTime.now().plusMinutes(55);
+        LocalDateTime to   = LocalDateTime.now().plusMinutes(60);
+        List<Activity> activities = activityRepository.findActivitiesNeedingReminder(from, to);
+        if (activities.isEmpty()) return;
+
+        for (Activity activity : activities) {
+            List<Long> memberIds = activityMemberRepository.findApprovedMemberUserIds(activity.getId());
+            for (Long userId : memberIds) {
+                notificationService.notifyActivityReminder(userId, activity.getId(), activity.getTitle());
+            }
+            // Also remind the host
+            notificationService.notifyActivityReminder(
+                activity.getHostUser().getId(), activity.getId(), activity.getTitle());
+        }
+
+        List<Long> ids = activities.stream().map(Activity::getId).toList();
+        activityRepository.markRemindersSent(ids);
+        log.info("[Scheduler] Sent activity reminders for {} activities", activities.size());
+    }
 
     // ─── Activity expiry ──────────────────────────────────────────────────────
 
@@ -99,6 +136,22 @@ public class ScheduledJobs {
         int count = deviceTokenRepository.deleteStaleTokens(cutoff);
         if (count > 0) {
             log.info("[Scheduler] Deleted {} stale device tokens", count);
+        }
+    }
+
+    // ─── Story expiry ─────────────────────────────────────────────────────────
+
+    /**
+     * Soft-delete stories whose expiresAt has passed (typically 24-hour stories).
+     * Runs every hour. The StoryRepository query excludes already-deleted stories
+     * so this is safe to run repeatedly.
+     */
+    @Scheduled(cron = "0 0 * * * *")
+    @Transactional
+    public void expireOldStories() {
+        int count = storyRepository.expireOldStories(LocalDateTime.now());
+        if (count > 0) {
+            log.info("[Scheduler] Expired {} stories", count);
         }
     }
 

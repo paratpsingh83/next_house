@@ -30,8 +30,9 @@ data:
   SPRING_PROFILES_ACTIVE: "prod"
   SERVER_PORT: "8080"
 
-  # Database connection (host/port/name — credentials in Secret)
-  DB_HOST: "postgres-service.nexthouse.svc.cluster.local"
+  # Database — connect via PgBouncer, not directly to PostgreSQL.
+  # PgBouncer pools 400 app connections down to 25 real DB connections.
+  DB_HOST: "pgbouncer-service.nexthouse.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "nexthouse_db"
   DB_USERNAME: "nexthouse"
@@ -42,6 +43,10 @@ data:
 
   # Kafka
   KAFKA_BROKERS: "kafka-service.nexthouse.svc.cluster.local:9092"
+
+  # RabbitMQ (STOMP relay — credentials injected from Secret)
+  RABBITMQ_HOST: "rabbitmq-service.nexthouse.svc.cluster.local"
+  RABBITMQ_STOMP_PORT: "61613"
 
   # AWS
   AWS_REGION: "ap-southeast-1"
@@ -73,3 +78,7 @@ data:
   APP_CACHE_POST_TTL_MINUTES: "2"
   APP_CACHE_COMMUNITY_TTL_MINUTES: "5"
   APP_CACHE_TRENDING_FEED_TTL_MINUTES: "5"
+
+  # DigiLocker — non-sensitive config (credentials in Secret)
+  DIGILOCKER_REDIRECT_URI: "https://api.nexthouse.in/api/v1/verification/address/digilocker/callback"
+  FRONTEND_URL: "https://nexthouse.in"

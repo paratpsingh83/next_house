@@ -10,6 +10,7 @@ import lombok.*;
 @AllArgsConstructor
 public class SendMessageRequestDTO {
 
+    @Builder.Default
     private String messageType = "TEXT"; // TEXT | IMAGE | VIDEO | AUDIO | FILE
 
     @Size(max = 10000)

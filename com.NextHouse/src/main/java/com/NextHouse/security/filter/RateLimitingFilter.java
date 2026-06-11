@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -72,6 +73,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     @Value("${app.rate-limit.window-seconds:60}")
     private long windowSeconds;
+
+    @Value("${app.rate-limit.trusted-proxy-cidrs:10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32}")
+    private List<String> trustedProxyCidrs;
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -171,21 +175,47 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Extracts the real client IP, respecting X-Forwarded-For from load balancers.
-     * SECURITY NOTE: Only trust X-Forwarded-For if your application is behind a
-     * trusted load balancer. Without this guard, clients can spoof their IP.
+     * Extracts the real client IP.
+     * X-Forwarded-For is only trusted when remoteAddr is within a configured trusted CIDR
+     * (load balancer / k8s node CIDR). Otherwise the header is ignored to prevent IP spoofing.
      */
     private String extractClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            // X-Forwarded-For can contain a chain: "clientIp, proxy1, proxy2"
-            return xff.split(",")[0].trim();
+        String remoteAddr = request.getRemoteAddr();
+
+        if (isTrustedProxy(remoteAddr)) {
+            String xff = request.getHeader("X-Forwarded-For");
+            if (xff != null && !xff.isBlank()) {
+                return xff.split(",")[0].trim();
+            }
+            String realIp = request.getHeader("X-Real-IP");
+            if (realIp != null && !realIp.isBlank()) {
+                return realIp.trim();
+            }
         }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
+
+        return remoteAddr;
+    }
+
+    private boolean isTrustedProxy(String remoteAddr) {
+        try {
+            long remote = ipToLong(remoteAddr);
+            for (String cidr : trustedProxyCidrs) {
+                String[] parts  = cidr.split("/");
+                long network    = ipToLong(parts[0]);
+                int  prefixLen  = Integer.parseInt(parts[1]);
+                long mask       = prefixLen == 0 ? 0L : (0xFFFFFFFFL << (32 - prefixLen)) & 0xFFFFFFFFL;
+                if ((remote & mask) == (network & mask)) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private long ipToLong(String ip) {
+        String[] octets = ip.split("\\.");
+        if (octets.length != 4) return -1L;
+        long result = 0;
+        for (String octet : octets) result = (result << 8) | (Integer.parseInt(octet) & 0xFF);
+        return result;
     }
 
     /**

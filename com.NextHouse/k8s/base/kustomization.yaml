@@ -17,6 +17,8 @@ resources:
   - 07-redis-statefulset.yaml
   - 08-network-rbac.yaml
   - 09-kafka-statefulset.yaml
+  - 10-rabbitmq-statefulset.yaml
+  - 11-pgbouncer-deployment.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: nexthouse

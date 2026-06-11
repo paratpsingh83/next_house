@@ -19,7 +19,7 @@ export default function AppHeader({ followReqCount, onMenuToggle }: Props) {
           <span className="text-white text-sm font-black">N</span>
         </div>
         <span className="font-black text-gray-900 text-base tracking-tight">
-          Nex<span className="text-primary-500">House</span>
+          Next<span className="text-primary-500">House</span>
         </span>
       </Link>
 

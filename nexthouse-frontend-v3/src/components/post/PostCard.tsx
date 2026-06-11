@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   Heart, MessageCircle, Share2, Bookmark, BookmarkCheck,
   MapPin, MoreHorizontal, Flag, Trash2, Copy, ChevronLeft,
-  ChevronRight, Shield, Star, Zap, Smile,
+  ChevronRight, Shield, Star, Zap, Smile, Loader2,
 } from 'lucide-react';
 import { postsApi } from '@/api';
 import type { PostResponse } from '@/types';
@@ -47,9 +47,13 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
   const [saved,        setSaved]        = useState(post.isSaved ?? false);
   const [likeCount,    setLikeCount]    = useState(post.likeCount ?? 0);
   const [commentCount, setCommentCount] = useState(post.commentCount ?? 0);
+  const [shareCount,   setShareCount]   = useState(post.shareCount ?? 0);
   const [showMenu,     setShowMenu]     = useState(false);
   const [showReport,   setShowReport]   = useState(false);
   const [showReactions,setShowReactions]= useState(false);
+  const [showRepost,   setShowRepost]   = useState(false);
+  const [repostCaption,setRepostCaption]= useState('');
+  const [reposting,    setReposting]    = useState(false);
   const [reporting,    setReporting]    = useState(false);
   const [mediaIdx,     setMediaIdx]     = useState(0);
   const [likeAnimating,setLikeAnimating]= useState(false);
@@ -113,13 +117,26 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
     } catch { setSaved(prev); }
   };
 
-  // ── Share ─────────────────────────────────────────────────────────────────────
+  // ── Share (native) ────────────────────────────────────────────────────────────
   const handleShare = async () => {
     setShowMenu(false);
     await postsApi.share(post.id).catch(() => {});
     const url = `${window.location.origin}/posts/${post.id}`;
-    if (navigator.share) navigator.share({ title: post.content?.slice(0, 60) ?? 'NexHouse post', url }).catch(() => {});
+    if (navigator.share) navigator.share({ title: post.content?.slice(0, 60) ?? 'NextHouse post', url }).catch(() => {});
     else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
+  };
+
+  // ── Repost ────────────────────────────────────────────────────────────────────
+  const handleRepost = async () => {
+    setReposting(true);
+    try {
+      await postsApi.repost(post.id, repostCaption.trim() || undefined);
+      setShareCount(c => c + 1);
+      setShowRepost(false);
+      setRepostCaption('');
+      toast.success('Reposted to your feed!');
+    } catch { toast.error('Failed to repost'); }
+    finally  { setReposting(false); }
   };
 
   // ── Delete ────────────────────────────────────────────────────────────────────
@@ -202,9 +219,15 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
 
             {showMenu && (
               <div className="absolute right-0 top-9 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-scale-in">
+                {!isMine && (
+                  <button onClick={() => { setShowMenu(false); setShowRepost(true); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
+                    <Share2 size={15} className="text-primary-500"/>Repost to feed
+                  </button>
+                )}
                 <button onClick={handleShare}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
-                  <Share2 size={15} className="text-gray-400"/>Share post
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition border-t border-gray-50">
+                  <Share2 size={15} className="text-gray-400"/>Share link
                 </button>
                 <button onClick={async () => { setShowMenu(false); const url=`${window.location.origin}/posts/${post.id}`; await navigator.clipboard.writeText(url); toast.success('Link copied!'); }}
                   className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition border-t border-gray-50">
@@ -236,6 +259,50 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
               : post.content
             }
           </p>
+        </Link>
+      )}
+
+      {/* ── Original post (repost embed) ────────────────────────────────────────── */}
+      {post.originalPost && (
+        <Link href={`/posts/${post.originalPost.id}`} className="block mx-4 mb-3 rounded-2xl border border-gray-200 bg-gray-50 overflow-hidden hover:bg-gray-100 transition no-tap">
+          {/* original media thumbnail */}
+          {(post.originalPost.thumbnailUrl || (post.originalPost.media && post.originalPost.media.length > 0)) && (
+            <div className="w-full h-36 overflow-hidden bg-gray-200">
+              <img
+                src={post.originalPost.thumbnailUrl ?? post.originalPost.media![0].thumbnailUrl ?? post.originalPost.media![0].url}
+                alt=""
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          )}
+          <div className="p-3">
+            {/* original author */}
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-6 h-6 rounded-full bg-primary-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                {post.originalPost.createdBy?.profileImage
+                  ? <img src={post.originalPost.createdBy.profileImage} alt="" className="w-full h-full object-cover"/>
+                  : <span className="text-primary-600 font-bold text-[10px]">
+                      {post.originalPost.createdBy ? post.originalPost.createdBy.name[0].toUpperCase() : 'A'}
+                    </span>
+                }
+              </div>
+              <span className="text-xs font-semibold text-gray-700 truncate">
+                {post.originalPost.createdBy?.name ?? 'Anonymous'}
+              </span>
+              {post.originalPost.postType && (
+                <span className={`ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-lg flex-shrink-0 ${POST_TYPE_STYLE[post.originalPost.postType]?.bg ?? 'bg-gray-100'} ${POST_TYPE_STYLE[post.originalPost.postType]?.text ?? 'text-gray-600'}`}>
+                  {POST_TYPE_STYLE[post.originalPost.postType]?.label ?? post.originalPost.postType}
+                </span>
+              )}
+            </div>
+            {/* original content */}
+            {post.originalPost.content && (
+              <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
+                {post.originalPost.content}
+              </p>
+            )}
+          </div>
         </Link>
       )}
 
@@ -371,10 +438,11 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
           </Link>
 
           <button
-            onClick={handleShare}
+            onClick={() => !isMine ? setShowRepost(true) : handleShare()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition"
           >
             <Share2 size={15}/>
+            {shareCount > 0 && <span>{shareCount}</span>}
           </button>
         </div>
 
@@ -403,6 +471,53 @@ export default function PostCard({ post, onDelete }: { post: PostResponse; onDel
                 ))}
               </div>
               <button onClick={() => setShowReport(false)} className="w-full py-4 text-sm text-gray-400 font-medium mt-2">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Repost bottom sheet ─────────────────────────────────────────────────── */}
+      {showRepost && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end justify-center animate-fade-in" onClick={() => setShowRepost(false)}>
+          <div className="sheet w-full max-w-md animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="sheet-handle"/>
+            <div className="px-5 pb-5">
+              <h3 className="font-bold text-gray-900 text-center text-base mb-4">Repost to your feed</h3>
+
+              {/* Embedded original preview */}
+              <div className="border-2 border-gray-100 rounded-2xl p-3 mb-3 bg-gray-50">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-6 h-6 rounded-full bg-primary-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    {post.createdBy?.profileImage
+                      ? <img src={post.createdBy.profileImage} className="w-full h-full object-cover" alt=""/>
+                      : <span className="text-[10px] font-bold text-primary-600">{post.createdBy?.name?.[0]}</span>
+                    }
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700">{post.createdBy?.name ?? 'Anonymous'}</span>
+                </div>
+                <p className="text-sm text-gray-600 line-clamp-3">{post.content}</p>
+              </div>
+
+              <textarea
+                value={repostCaption}
+                onChange={e => setRepostCaption(e.target.value)}
+                placeholder="Add a comment (optional)"
+                rows={3}
+                maxLength={2000}
+                className="input resize-none w-full mb-3"
+              />
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowRepost(false)} className="flex-1 btn-outline py-3">Cancel</button>
+                <button
+                  onClick={handleRepost}
+                  disabled={reposting}
+                  className="flex-1 btn-primary py-3 gap-2"
+                >
+                  {reposting ? <Loader2 size={15} className="animate-spin"/> : <Share2 size={15}/>}
+                  Repost
+                </button>
+              </div>
             </div>
           </div>
         </div>

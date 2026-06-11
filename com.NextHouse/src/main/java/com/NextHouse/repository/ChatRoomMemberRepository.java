@@ -53,4 +53,21 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now
     );
+
+    /**
+     * Single-query total unread count across all rooms for a user.
+     * Replaces the previous loop-based approach that issued 2 queries per room.
+     */
+    @Query(value = """
+            SELECT COALESCE(COUNT(cm.id), 0)
+            FROM chat_room_members crm
+            JOIN chat_messages cm ON cm.room_id = crm.room_id
+            WHERE crm.user_id     = :userId
+              AND crm.is_deleted  = false
+              AND cm.is_deleted   = false
+              AND cm.is_unsent    = false
+              AND cm.sender_id   <> :userId
+              AND (crm.last_read_at IS NULL OR cm.created_at > crm.last_read_at)
+            """, nativeQuery = true)
+    Long countTotalUnread(@Param("userId") Long userId);
 }

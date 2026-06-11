@@ -19,4 +19,7 @@ public class OtpVerifyRequestDTO {
 
     @NotBlank(message = "Purpose is required")
     private String purpose;
+
+    /** Optional — when provided, verifying the OTP also completes 2FA login and returns auth tokens. */
+    private String twoFactorToken;
 }

@@ -2,6 +2,7 @@ package com.NextHouse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 @Entity
@@ -35,9 +36,11 @@ public class UserNeighborhood extends BaseEntity {
             foreignKey = @ForeignKey(name = "fk_user_neighborhood_nbh"))
     private Neighborhood neighborhood;
 
+    @Builder.Default
     @Column(name = "primary_neighborhood", nullable = false)
     private Boolean primaryNeighborhood = false;
 
+    @Builder.Default
     @Column(name = "verified", nullable = false)
     private Boolean verified = false;
 

@@ -18,7 +18,7 @@ public interface AuthService {
 
     void requestOtp(OtpRequestDTO dto);
 
-    void verifyOtp(OtpVerifyRequestDTO dto);
+    String verifyOtp(OtpVerifyRequestDTO dto);
 
     void forgotPassword(ForgotPasswordRequestDTO dto);
 
@@ -32,5 +32,5 @@ public interface AuthService {
 
     void disableTwoFactor(Long currentUserId);
 
-    AuthResponseDTO verifyTwoFactor(Long currentUserId, String otp);
+    AuthResponseDTO verifyTwoFactor(String twoFactorToken, String otp);
 }

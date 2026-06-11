@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Loader2, ShoppingBag, Search, PlusCircle, Tag } from 'lucide-react';
+import { Loader2, ShoppingBag, Search, PlusCircle, Tag, SlidersHorizontal, X } from 'lucide-react';
 import { marketplaceApi } from '@/api';
 import Link from 'next/link';
 import MarketplaceCard from '@/components/marketplace/MarketplaceCard';
@@ -17,13 +17,21 @@ export default function MarketplacePage() {
   const [q,        setQ]        = useState('');
   const [tab,      setTab]      = useState<Tab>('nearby');
   const [category, setCategory] = useState('All');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   const nearby = useInfiniteQuery({
-    queryKey: ['marketplace', 'nearby', loc, category, q],
+    queryKey: ['marketplace', 'nearby', loc, category, q, minPrice, maxPrice],
     queryFn:  ({ pageParam = 0 }) =>
-      q.length > 1
-        ? marketplaceApi.search(q, pageParam)
-        : marketplaceApi.nearby(loc.lat, loc.lon, 10000, category === 'All' ? undefined : category, undefined, undefined, pageParam),
+      marketplaceApi.nearby(
+        loc.lat, loc.lon, 10000,
+        category === 'All' ? undefined : category,
+        minPrice ? Number(minPrice) : undefined,
+        maxPrice ? Number(maxPrice) : undefined,
+        pageParam, 20,
+        q.length > 1 ? q : undefined
+      ),
     getNextPageParam: l => l.hasNext ? l.page + 1 : undefined,
     initialPageParam: 0,
     enabled: tab === 'nearby',
@@ -61,13 +69,55 @@ export default function MarketplacePage() {
       </div>
 
       {tab === 'nearby' && (
-        <div className="relative mx-4 mt-3">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search listings…" className="input pl-9 text-sm"/>
+        <div className="mx-4 mt-3 space-y-2">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search listings…" className="input pl-9 text-sm"/>
+            </div>
+            <button
+              onClick={() => setShowFilters(f => !f)}
+              className={`px-3 rounded-xl border-2 transition flex items-center gap-1.5 text-sm font-semibold flex-shrink-0 ${
+                showFilters || minPrice || maxPrice
+                  ? 'border-primary-500 bg-primary-50 text-primary-600'
+                  : 'border-gray-200 text-gray-500 bg-white hover:border-gray-300'
+              }`}
+            >
+              <SlidersHorizontal size={15}/>
+              {(minPrice || maxPrice) ? <span className="w-1.5 h-1.5 rounded-full bg-primary-500"/> : null}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-gray-700">Price Range (RM)</p>
+                {(minPrice || maxPrice) && (
+                  <button onClick={() => { setMinPrice(''); setMaxPrice(''); }} className="text-xs text-primary-500 font-medium flex items-center gap-1">
+                    <X size={11}/>Clear
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number" min={0} placeholder="Min"
+                  value={minPrice} onChange={e => setMinPrice(e.target.value)}
+                  className="input text-sm flex-1 py-2"
+                />
+                <span className="text-gray-400 text-sm flex-shrink-0">–</span>
+                <input
+                  type="number" min={0} placeholder="Max"
+                  value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
+                  className="input text-sm flex-1 py-2"
+                />
+              </div>
+              <p className="text-xs text-gray-400">Leave blank for free items too</p>
+            </div>
+          )}
         </div>
       )}
 
-      {tab === 'nearby' && !q && (
+      {tab === 'nearby' && (
         <div className="overflow-x-auto scrollbar-hide px-4 mt-3">
           <div className="flex gap-2 w-max">
             {CATEGORIES.map(c => (

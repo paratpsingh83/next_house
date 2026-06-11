@@ -4,9 +4,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -23,7 +24,9 @@ public class ChatMessageResponseDTO {
 
     // Reply context
     private Long replyToMessageId;
-    private String replyToPreview; // truncated original message text
+    private String replyToPreview;
+
+    private List<MessageReactionSummaryDTO> reactions;
 
     private LocalDateTime createdAt;
 }

@@ -93,7 +93,7 @@ export default function PrivacySettingsPage() {
                 <p className="text-xs text-gray-400 mt-0.5">
                   {isPrivate
                     ? 'Only approved followers can see your posts and activities'
-                    : 'Anyone on NexHouse can see your posts and activities'}
+                    : 'Anyone on NextHouse can see your posts and activities'}
                 </p>
               </div>
               {privacyMutation.isPending

@@ -3,6 +3,7 @@ package com.NextHouse.entity;
 import com.NextHouse.constant.ChatRoomRole;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -28,9 +29,11 @@ import java.time.LocalDateTime;
 @SuperBuilder
 public class ChatRoomMember extends BaseEntity {
 
+    @Builder.Default
     @Column(name = "muted", nullable = false)
     private Boolean muted = false;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     private ChatRoomRole role = ChatRoomRole.MEMBER;

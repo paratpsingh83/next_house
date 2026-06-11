@@ -4,8 +4,8 @@ import Providers from '@/components/common/Providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'NexHouse — Hyperlocal Community',
-  description: 'Connect with your neighbourhood on NexHouse',
+  title: 'NextHouse — Hyperlocal Community',
+  description: 'Connect with your neighbourhood on NextHouse',
   themeColor: '#10b981',
   viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
 };

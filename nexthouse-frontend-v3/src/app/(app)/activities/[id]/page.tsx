@@ -18,9 +18,20 @@ const STATUS_COLOR: Record<string, string> = {
   CANCELLED:'bg-red-50 text-red-600', COMPLETED:'bg-gray-100 text-gray-500', EXPIRED:'bg-gray-100 text-gray-500',
 };
 
-function PendingRequests({ activityId, onApprove, onReject }: { activityId:number; onApprove:(id:number)=>void; onReject:(id:number)=>void }) {
+function PendingRequests({ activityId, onApprove, onReject }: { activityId:number; onApprove:(id:number)=>Promise<void>; onReject:(id:number)=>Promise<void> }) {
+  const [loadingId, setLoadingId] = useState<number|null>(null);
   const { data, isLoading } = useQuery({ queryKey:['activity-pending',activityId], queryFn:()=>activitiesApi.getMembers(activityId,'PENDING',0,20) });
   const pending = data?.content??[];
+
+  const handleApprove = async (id: number) => {
+    setLoadingId(id);
+    try { await onApprove(id); } finally { setLoadingId(null); }
+  };
+  const handleReject = async (id: number) => {
+    setLoadingId(id);
+    try { await onReject(id); } finally { setLoadingId(null); }
+  };
+
   if(isLoading) return <Loader2 className="animate-spin text-primary-400 mx-auto" size={20}/>;
   if(pending.length===0) return <p className="text-sm text-gray-400 text-center py-2">No pending requests</p>;
   return <div className="space-y-2">{pending.map(m=>(
@@ -29,8 +40,12 @@ function PendingRequests({ activityId, onApprove, onReject }: { activityId:numbe
         {m.user.profileImage?<img src={m.user.profileImage} className="w-full h-full object-cover" alt=""/>:<span className="text-primary-600 font-bold text-xs">{m.user.name[0]}</span>}
       </div>
       <p className="text-sm font-medium flex-1 truncate">{m.user.name}</p>
-      <button onClick={()=>onApprove(m.id)} className="p-1.5 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition"><CheckCircle size={16}/></button>
-      <button onClick={()=>onReject(m.id)} className="p-1.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 transition"><XCircle size={16}/></button>
+      <button onClick={()=>handleApprove(m.id)} disabled={loadingId!==null} className="p-1.5 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition">
+        {loadingId===m.id ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle size={16}/>}
+      </button>
+      <button onClick={()=>handleReject(m.id)} disabled={loadingId!==null} className="p-1.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition">
+        {loadingId===m.id ? <Loader2 size={16} className="animate-spin"/> : <XCircle size={16}/>}
+      </button>
     </div>
   ))}</div>;
 }
@@ -43,7 +58,7 @@ export default function ActivityDetailPage() {
   const [joining, setJoining] = useState(false);
   const activityId = Number(id);
 
-  const { data:activity, isLoading, refetch } = useQuery({ queryKey:['activity',activityId], queryFn:()=>activitiesApi.get(activityId) });
+  const { data:activity, isLoading, refetch } = useQuery({ queryKey:['activity',activityId], queryFn:()=>activitiesApi.get(activityId), staleTime:0 });
   const { data:membersData, isLoading:loadingMembers } = useQuery({ queryKey:['activity-members',activityId], queryFn:()=>activitiesApi.getMembers(activityId,'APPROVED',0,50), enabled:tab==='members' });
   const members = membersData?.content??[];
 
@@ -65,8 +80,14 @@ export default function ActivityDetailPage() {
     if(navigator.share) navigator.share({title:activity?.title,url}).catch(()=>{});
     else { await navigator.clipboard.writeText(url); toast.success('Link copied!'); }
   };
-  const handleApprove = async (memberId:number) => { try { await activitiesApi.approve(activityId,memberId); toast.success('Approved!'); qc.invalidateQueries({queryKey:['activity-pending',activityId]}); qc.invalidateQueries({queryKey:['activity-members',activityId]}); } catch { toast.error('Failed'); } };
-  const handleReject  = async (memberId:number) => { try { await activitiesApi.reject(activityId,memberId); toast('Rejected'); qc.invalidateQueries({queryKey:['activity-pending',activityId]}); } catch { toast.error('Failed'); } };
+  const handleApprove = async (memberId:number): Promise<void> => {
+    try { await activitiesApi.approve(activityId,memberId); toast.success('Approved!'); await qc.refetchQueries({queryKey:['activity-pending',activityId]}); qc.invalidateQueries({queryKey:['activity-members',activityId]}); qc.invalidateQueries({queryKey:['activity',activityId]}); }
+    catch { toast.error('Failed to approve'); throw new Error('approve failed'); }
+  };
+  const handleReject = async (memberId:number): Promise<void> => {
+    try { await activitiesApi.reject(activityId,memberId); toast('Rejected'); await qc.refetchQueries({queryKey:['activity-pending',activityId]}); qc.invalidateQueries({queryKey:['activity',activityId]}); }
+    catch { toast.error('Failed to reject'); throw new Error('reject failed'); }
+  };
 
   if(isLoading) return <div className="flex justify-center items-center min-h-[60vh]"><Loader2 className="animate-spin text-primary-500" size={32}/></div>;
   if(!activity) return <div className="p-8 text-center"><p className="text-gray-400">Activity not found</p><button onClick={()=>router.back()} className="btn-primary mt-4">Go back</button></div>;

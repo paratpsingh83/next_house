@@ -4,6 +4,7 @@ import com.NextHouse.constant.ActivityMemberRole;
 import com.NextHouse.constant.JoinStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
@@ -30,10 +31,12 @@ import java.time.LocalDateTime;
 @SuperBuilder
 public class ActivityMember extends BaseEntity {
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "join_status", nullable = false, length = 20)
     private JoinStatus joinStatus = JoinStatus.PENDING;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     private ActivityMemberRole role = ActivityMemberRole.MEMBER;

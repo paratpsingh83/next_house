@@ -113,7 +113,18 @@ public class MarketplaceServiceImpl implements MarketplaceService {
         item.setLocation(geoUtils.buildPoint(dto.getLatitude(), dto.getLongitude()));
         item.setAddress(dto.getAddress());
 
-        return enrichItemResponse(marketplaceMapper.toResponse(itemRepository.save(item)));
+        MarketplaceItem saved = itemRepository.save(item);
+
+        if (dto.getMediaIds() != null && !dto.getMediaIds().isEmpty()) {
+            mediaService.attachMediaToEntity(dto.getMediaIds(), "MARKETPLACE", saved.getId());
+            if (saved.getThumbnailUrl() == null) {
+                mediaFileRepository.findByEntityTypeAndEntityIdAndIsDeletedFalse("MARKETPLACE", saved.getId())
+                        .stream().findFirst()
+                        .ifPresent(mf -> { saved.setThumbnailUrl(mf.getUrl()); itemRepository.save(saved); });
+            }
+        }
+
+        return enrichItemResponse(marketplaceMapper.toResponse(saved));
     }
 
     @Override
@@ -142,11 +153,12 @@ public class MarketplaceServiceImpl implements MarketplaceService {
     public PageResponseDTO<MarketplaceItemResponseDTO> getNearbyListings(
             Long currentUserId, NearbySearchRequestDTO geoDto,
             String category, BigDecimal minPrice, BigDecimal maxPrice,
-            int page, int size) {
+            String query, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
+        String q = (query != null && !query.isBlank()) ? query.trim() : null;
         Page<MarketplaceItem> items = itemRepository.findNearbyListings(
             geoDto.getLatitude(), geoDto.getLongitude(), geoDto.getRadiusMeters(),
-            category, minPrice, maxPrice, pageable
+            category, minPrice, maxPrice, q, pageable
         );
         return PageResponseDTO.of(items.map(item -> enrichItemResponse(marketplaceMapper.toResponse(item))));
     }

@@ -13,6 +13,8 @@ public class CreateStoryRequestDTO {
 
     private String mediaUrl;
 
+    private Long mediaId;       // optional — used to attach uploaded media to this story
+
     @NotBlank
     private String mediaType;   // IMAGE | VIDEO | TEXT
 

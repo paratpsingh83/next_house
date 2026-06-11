@@ -22,6 +22,7 @@ public interface OtpVerificationRepository extends JpaRepository<OtpVerification
               AND o.verified = false
               AND o.expiresAt > :now
             ORDER BY o.createdAt DESC
+            LIMIT 1
             """)
     Optional<OtpVerification> findLatestByPhone(
             @Param("phone")   String      phone,
@@ -36,6 +37,7 @@ public interface OtpVerificationRepository extends JpaRepository<OtpVerification
               AND o.verified = false
               AND o.expiresAt > :now
             ORDER BY o.createdAt DESC
+            LIMIT 1
             """)
     Optional<OtpVerification> findLatestByEmail(
             @Param("email")   String      email,

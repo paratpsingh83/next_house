@@ -1,6 +1,7 @@
 package com.NextHouse.serviceImpl;
 
 import com.NextHouse.dto.common.PageResponseDTO;
+import com.NextHouse.dto.projection.UserStatsProjection;
 import com.NextHouse.dto.request.*;
 import com.NextHouse.dto.response.*;
 import com.NextHouse.entity.*;
@@ -37,7 +38,6 @@ public class UserServiceImpl implements UserService {
     private final FollowRequestRepository    followRequestRepository;
     private final BlockedUserRepository      blockedUserRepository;
     private final UserNeighborhoodRepository userNeighborhoodRepository;
-    private final UserPresenceRepository     userPresenceRepository;
     private final NeighborhoodRepository     neighborhoodRepository;
     private final MediaFileRepository        mediaFileRepository;
 
@@ -48,18 +48,21 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "user:profile", key = "#userId + ':' + #requestingUserId")
     public UserResponseDTO getProfile(Long userId, Long requestingUserId) {
         return buildUserResponse(findUserOrThrow(userId), requestingUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "user:profile", key = "#currentUserId + ':self'")
     public UserResponseDTO getMyProfile(Long currentUserId) {
         return buildUserResponse(findUserOrThrow(currentUserId), currentUserId);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = "user:profile", key = "#currentUserId + ':self'")
     public UserResponseDTO updateProfile(Long currentUserId, UpdateProfileRequestDTO dto) {
         User user = findUserOrThrow(currentUserId);
         userMapper.updateFromRequest(dto, user);
@@ -174,6 +177,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "user:profile", allEntries = true)
     public String followUser(Long currentUserId, Long targetUserId) {
         if (currentUserId.equals(targetUserId)) throw new ConflictException("Cannot follow yourself");
         if (followRepository.existsByFollowerIdAndFollowingId(currentUserId, targetUserId))
@@ -202,6 +206,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "user:profile", allEntries = true)
     public void unfollowUser(Long currentUserId, Long targetUserId) {
         if (!followRepository.existsByFollowerIdAndFollowingId(currentUserId, targetUserId))
             throw new NotFoundException("Follow relationship not found");
@@ -222,6 +227,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "user:profile", allEntries = true)
     public void acceptFollowRequest(Long requestId, Long currentUserId) {
         FollowRequest req = followRequestRepository.findById(requestId)
             .orElseThrow(() -> new NotFoundException("Follow request not found"));
@@ -306,7 +312,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "user:profile", key = "#currentUserId")
+    @CacheEvict(value = "user:profile", allEntries = true)
     public void deleteAccount(Long currentUserId) {
         User user = findUserOrThrow(currentUserId);
         user.setIsDeleted(true);
@@ -366,27 +372,16 @@ public class UserServiceImpl implements UserService {
     private UserResponseDTO buildUserResponse(User user, Long requestingUserId) {
         UserResponseDTO dto = userMapper.toResponse(user);
 
-        Boolean online = null;
-        LocalDateTime lastSeen = null;
-        var presenceOpt = userPresenceRepository.findByUserId(user.getId());
-        if (presenceOpt.isPresent()) {
-            online   = presenceOpt.get().getOnline();
-            lastSeen = presenceOpt.get().getLastSeen();
-        }
+        UserStatsProjection stats = userRepository.findUserStats(user.getId(), requestingUserId);
 
-        long followerCount  = followRepository.countByFollowingId(user.getId());
-        long followingCount = followRepository.countByFollowerId(user.getId());
-
-        boolean isFollowing  = false;
-        boolean isFollowedBy = false;
-        boolean isBlocked    = false;
-        boolean isRequested  = false;
-        if (requestingUserId != null && !requestingUserId.equals(user.getId())) {
-            isFollowing  = followRepository.existsByFollowerIdAndFollowingId(requestingUserId, user.getId());
-            isFollowedBy = followRepository.existsByFollowerIdAndFollowingId(user.getId(), requestingUserId);
-            isBlocked    = blockedUserRepository.existsByUserIdAndBlockedUserId(requestingUserId, user.getId());
-            isRequested  = !isFollowing && followRequestRepository.existsByRequesterIdAndTargetId(requestingUserId, user.getId());
-        }
+        long followerCount  = stats != null && stats.getFollowerCount()  != null ? stats.getFollowerCount()  : 0L;
+        long followingCount = stats != null && stats.getFollowingCount() != null ? stats.getFollowingCount() : 0L;
+        Boolean online      = stats != null ? stats.getOnline()   : null;
+        LocalDateTime lastSeen = stats != null ? stats.getLastSeen() : null;
+        boolean isFollowing  = stats != null && Boolean.TRUE.equals(stats.getIsFollowing());
+        boolean isFollowedBy = stats != null && Boolean.TRUE.equals(stats.getIsFollowedBy());
+        boolean isBlocked    = stats != null && Boolean.TRUE.equals(stats.getIsBlocked());
+        boolean isRequested  = stats != null && Boolean.TRUE.equals(stats.getIsRequested());
 
         return UserResponseDTO.builder()
                 .id(dto.getId())
