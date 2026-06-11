@@ -11,6 +11,8 @@ import com.NextHouse.repository.*;
 import com.NextHouse.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -54,6 +56,11 @@ public class NotificationServiceImpl implements NotificationService {
 
     // FCM push notification service (see FirebasePushService)
     private final FirebasePushService   firebasePushService;
+
+    // Self-reference via proxy so that @Async on sendNotification is not bypassed
+    // when convenience methods (notifyFollow, notifyBorrowResponse, etc.) call it.
+    @Lazy @Autowired
+    private NotificationService self;
 
     // ─── Query methods ────────────────────────────────────────────────────────
 
@@ -188,7 +195,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyFollow(User follower, User followed) {
-        sendNotification(
+        self.sendNotification(
             followed.getId(), follower.getId(),
             "FOLLOW",
             follower.getName() + " started following you",
@@ -200,7 +207,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyPostLike(User liker, Long postId, Long postOwnerId) {
-        sendNotification(
+        self.sendNotification(
             postOwnerId, liker.getId(),
             "LIKE",
             liker.getName() + " reacted to your post",
@@ -212,7 +219,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyComment(User commenter, Long postId, Long postOwnerId) {
-        sendNotification(
+        self.sendNotification(
             postOwnerId, commenter.getId(),
             "COMMENT",
             commenter.getName() + " commented on your post",
@@ -224,7 +231,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyActivityJoin(User joiner, Long activityId, Long hostId) {
-        sendNotification(
+        self.sendNotification(
             hostId, joiner.getId(),
             "ACTIVITY_JOIN_REQUEST",
             joiner.getName() + " wants to join your activity",
@@ -237,7 +244,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public void notifyActivityApproval(Long userId, Long activityId, boolean approved) {
         String status = approved ? "approved" : "declined";
-        sendNotification(
+        self.sendNotification(
             userId, null,
             approved ? "ACTIVITY_APPROVED" : "ACTIVITY_REJECTED",
             "Your join request was " + status,
@@ -249,7 +256,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyCommunityJoin(User joiner, Long communityId, Long adminId) {
-        sendNotification(
+        self.sendNotification(
             adminId, joiner.getId(),
             "COMMUNITY_JOIN_REQUEST",
             joiner.getName() + " wants to join your community",
@@ -261,7 +268,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyFollowRequest(User requester, User target) {
-        sendNotification(
+        self.sendNotification(
             target.getId(), requester.getId(),
             "FOLLOW_REQUEST",
             requester.getName() + " wants to follow you",
@@ -273,7 +280,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyFollowRequestAccepted(User acceptor, User requester) {
-        sendNotification(
+        self.sendNotification(
             requester.getId(), acceptor.getId(),
             "FOLLOW_REQUEST_ACCEPTED",
             acceptor.getName() + " accepted your follow request",
@@ -285,7 +292,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyActivityReminder(Long userId, Long activityId, String activityTitle) {
-        sendNotification(
+        self.sendNotification(
             userId, null,
             "ACTIVITY_REMINDER",
             "Activity starting soon",
@@ -297,7 +304,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notifyBorrowResponse(User responder, Long requestId, String requestTitle, Long requesterId) {
-        sendNotification(
+        self.sendNotification(
             requesterId,
             responder.getId(),
             "BORROW_RESPONSE",

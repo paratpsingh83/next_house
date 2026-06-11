@@ -126,12 +126,16 @@ public class BorrowRequestServiceImpl implements BorrowRequestService {
         log.info("[Borrow] Request id={} responded to by userId={}", requestId, currentUserId);
 
         // Notify the requester — they can then open a DM with the responder
-        notificationService.notifyBorrowResponse(
-            responder,
-            requestId,
-            request.getTitle(),
-            request.getRequester().getId()
-        );
+        try {
+            notificationService.notifyBorrowResponse(
+                responder,
+                requestId,
+                request.getTitle(),
+                request.getRequester().getId()
+            );
+        } catch (Exception e) {
+            log.warn("[Borrow] Failed to send BORROW_RESPONSE notification: requestId={} error={}", requestId, e.getMessage());
+        }
 
         return borrowRequestMapper.toResponse(saved);
     }
